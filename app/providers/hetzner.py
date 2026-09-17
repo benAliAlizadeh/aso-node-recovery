@@ -60,6 +60,18 @@ class HetznerProvider(HttpProviderAdapterMixin, ProviderAdapter):
         )
         return self._parse_server(body.get("server", {}))
 
+    async def find_server_by_name(self, name: str) -> ProviderServer | None:
+        body = await self._request_json(self._client, "GET", "/servers", params={"name": name})
+        servers = body.get("servers") or []
+        exact = [item for item in servers if str(item.get("name") or "") == name]
+        if not exact:
+            return None
+        if len(exact) > 1:
+            from app.providers.errors import ProviderError
+
+            raise ProviderError("multiple Hetzner servers matched the recovery name", code="ambiguous_name")
+        return self._parse_server(exact[0])
+
     async def delete_server(self, provider_server_id: str) -> None:
         await self._request_json(self._client, "DELETE", f"/servers/{provider_server_id}")
 

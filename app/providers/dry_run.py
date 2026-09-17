@@ -43,6 +43,14 @@ class DryRunProvider(ProviderAdapter):
         except KeyError as exc:
             raise ProviderNotFoundError("dry-run server does not exist", code="not_found") from exc
 
+    async def find_server_by_name(self, name: str) -> ProviderServer | None:
+        matches = [server for server in self._servers.values() if server.name == name and server.status is not ProviderServerStatus.DELETED]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise RuntimeError("dry-run provider has duplicate server names")
+        return matches[0]
+
     async def delete_server(self, provider_server_id: str) -> None:
         server = await self.get_server(provider_server_id)
         self._servers[provider_server_id] = ProviderServer(

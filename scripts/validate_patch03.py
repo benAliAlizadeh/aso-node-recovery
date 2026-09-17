@@ -37,7 +37,7 @@ def main() -> None:
         raise SystemExit(f"Patch 03 validation failed; missing files: {missing}")
 
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "0.5.0-providers-deployment":
+    if version not in {"0.5.0-providers-deployment", "0.6.0-master-replacement"}:
         raise SystemExit(f"Patch 03 validation failed; unexpected VERSION: {version}")
 
     settings = Settings()

@@ -93,3 +93,31 @@ def test_node_credentials_store_secret_references_not_secret_material() -> None:
         "external",
         "database_encrypted",
     }
+
+
+def test_phase6_registry_contains_durable_replacement_and_secret_reference_fields() -> None:
+    jobs = metadata.tables["replacement_jobs"].c
+    for name in (
+        "checkpoint",
+        "is_dry_run",
+        "workflow_lease_token",
+        "workflow_lease_until",
+        "master_snapshot",
+        "new_ip_verified_at",
+        "deployment_verified_at",
+        "master_updated_at",
+        "master_verified_at",
+        "final_health_verified_at",
+        "old_vps_deleted_at",
+    ):
+        assert name in jobs
+
+    credentials = metadata.tables["node_credentials"].c
+    assert "ssh_public_key" in credentials
+    assert "panel_password_backend" in credentials
+    assert "api_token_backend" in credentials
+
+    providers = metadata.tables["providers"].c
+    assert "default_region" in providers
+    assert "default_server_type" in providers
+    assert "default_image" in providers

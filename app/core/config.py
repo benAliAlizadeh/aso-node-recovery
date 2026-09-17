@@ -35,8 +35,11 @@ class Settings(BaseSettings):
     hetzner_api_token: SecretStr | None = None
     linode_api_token: SecretStr | None = None
     master_3xui_base_url: str | None = None
+    master_3xui_api_token: SecretStr | None = None
     master_3xui_username: str | None = None
     master_3xui_password: SecretStr | None = None
+    master_3xui_verify_tls: bool = True
+    master_3xui_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
 
     # Monitoring / Check-Host. Explicit nodes win; otherwise nodes are discovered from the official
     # node list using check_host_country_code.
@@ -59,6 +62,14 @@ class Settings(BaseSettings):
     linode_api_base_url: str = "https://api.linode.com/v4"
     provisioning_timeout_seconds: float = Field(default=300.0, ge=30.0, le=3600.0)
     provisioning_poll_interval_seconds: float = Field(default=3.0, ge=0.5, le=60.0)
+    provider_reconcile_grace_seconds: int = Field(default=30, ge=0, le=900)
+
+    # Persisted replacement orchestration. The worker remains opt-in; DRY_RUN remains the default.
+    replacement_worker_enabled: bool = False
+    replacement_ip_check_port: int = Field(default=22, ge=1, le=65535)
+    replacement_job_lease_seconds: int = Field(default=1800, ge=30, le=3600)
+    replacement_emergency_stop: bool = False
+    runtime_secret_dir: str = ".runtime-secrets"
 
     # SSH / 3X-UI deployment defaults. Strict host-key verification remains enabled by default.
     ssh_ready_timeout_seconds: float = Field(default=180.0, ge=10.0, le=1800.0)

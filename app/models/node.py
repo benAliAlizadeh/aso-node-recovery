@@ -160,8 +160,32 @@ class NodeCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=SecretReferenceBackend.FILE,
     )
     ssh_secret_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    ssh_public_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     panel_username: Mapped[str | None] = mapped_column(String(128), nullable=True)
     panel_password_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    panel_password_backend: Mapped[SecretReferenceBackend | None] = mapped_column(
+        Enum(
+            SecretReferenceBackend,
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            name="panel_password_secret_backend",
+            length=32,
+        ),
+        nullable=True,
+    )
+    panel_base_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     api_token_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    api_token_backend: Mapped[SecretReferenceBackend | None] = mapped_column(
+        Enum(
+            SecretReferenceBackend,
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            name="api_token_secret_backend",
+            length=32,
+        ),
+        nullable=True,
+    )
 
     node: Mapped[Node] = relationship(back_populates="credentials")

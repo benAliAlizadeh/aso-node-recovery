@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import json
 import httpx
 import pytest
 from pydantic import SecretStr
@@ -229,3 +230,70 @@ def test_provider_manager_reuses_adapter_for_same_persisted_provider() -> None:
     )
     manager = ProviderManager(ProviderFactory(Settings(dry_run=True)))
     assert manager.get(provider) is manager.get(provider)
+
+@pytest.mark.asyncio
+async def test_hetzner_reconciles_exact_server_name_before_create_retry() -> None:
+    captured: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["query"] = request.url.query.decode()
+        return httpx.Response(
+            200,
+            json={
+                "servers": [
+                    {
+                        "id": 789,
+                        "name": "aso-de-07-r1",
+                        "status": "running",
+                        "public_net": {"ipv4": {"ip": "203.0.113.70"}},
+                        "location": {"name": "fsn1"},
+                        "server_type": {"name": "cx23"},
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(
+        base_url="https://api.hetzner.test/v1", transport=httpx.MockTransport(handler)
+    ) as client:
+        server = await HetznerProvider(SecretStr("token"), client=client).find_server_by_name(
+            "aso-de-07-r1"
+        )
+
+    assert captured["path"] == "/v1/servers"
+    assert "name=aso-de-07-r1" in str(captured["query"])
+    assert server is not None and server.provider_server_id == "789"
+
+
+@pytest.mark.asyncio
+async def test_linode_reconciles_exact_label_with_x_filter() -> None:
+    captured: dict[str, str] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["filter"] = request.headers["X-Filter"]
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": 999,
+                        "label": "aso-de-07-r1",
+                        "status": "running",
+                        "ipv4": ["203.0.113.80"],
+                        "region": "eu-central",
+                        "type": "g6-nanode-1",
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(
+        base_url="https://api.linode.test/v4", transport=httpx.MockTransport(handler)
+    ) as client:
+        server = await LinodeProvider(SecretStr("token"), client=client).find_server_by_name(
+            "aso-de-07-r1"
+        )
+
+    assert json.loads(captured["filter"]) == {"label": "aso-de-07-r1"}
+    assert server is not None and server.provider_server_id == "999"

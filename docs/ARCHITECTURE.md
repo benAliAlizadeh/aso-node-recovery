@@ -2,15 +2,11 @@
 
 ## Dependency direction
 
-External systems are adapters around application/domain logic. Provider-specific code, Check-Host
-protocol details, SSH commands, master API details, and Telegram transport behavior must not leak into
-the replacement orchestration core.
-
 ```text
 API / Telegram / Schedulers
           |
           v
-Workers / Application Services / Orchestrator
+Workers / Application Services / Replacement Orchestrator
           |
           v
 Domain policy / persistence contracts
@@ -19,37 +15,38 @@ Domain policy / persistence contracts
 Provider / Check-Host / SSH / Master adapters
 ```
 
-## Current milestone
+Provider-specific code remains outside the replacement workflow. Check-Host parsing remains inside its
+adapter/health layer. SSH/3X-UI shell behavior remains isolated inside deployment. Telegram Phase 7
+will call application services rather than provider or master APIs directly.
 
-Phases 2-5 are implemented: persistence/registry, monitoring, provider adapters/provisioning, and the
-SSH/3X-UI deployment engine. Phase 6 Master mutation and replacement orchestration remain absent.
+## Phase 6 composition
 
-Provider responsibilities are split into:
+`ReplacementOrchestrator` coordinates already-isolated components:
 
-- `ProviderAdapter`: provider-neutral lifecycle contract.
-- `HetznerProvider` / `LinodeProvider`: current documented API formats only.
-- `ProviderFactory`: dry-run/real adapter selection behind a double safety guard.
-- `ProvisioningSafetyPolicy`: attempts, temporary server count, and concurrency limits.
-- `ProvisioningService`: bounded lifecycle for the newly created temporary VPS only.
+- `ProviderManager` / `ProvisioningService`
+- `ReplacementReachabilityVerifier`
+- `DeploymentService` / `NodeSshSpecFactory`
+- `Master3XUiClient`
+- SQLAlchemy repositories / durable workflow checkpoints
+- `RuntimeSecretStore`
+- `OldVpsProtectionGuard`
 
-Deployment responsibilities are split into:
+## Concurrency / idempotency
 
-- `AsyncSshCommandExecutor`: transport only.
-- `SshReadinessProbe`: bounded SSH readiness retry.
-- `RemoteOsDetector` / `RemoteBootstrapper`: host preparation.
-- `ThreeXUiInstaller`: all upstream 3X-UI shell/install behavior.
-- `ThreeXUiNodeApiVerifier`: Bearer-token `/panel/api/server/status` verification.
-- `DeploymentStateMachine` / `DeploymentService`: ordered deployment workflow.
+Three layers protect the workflow:
 
-## Duplicate prevention
+1. PostgreSQL unique `(node_id, active_slot)` means one active replacement per node.
+2. A global PostgreSQL advisory lock serializes short admission/capacity decisions.
+3. A persisted per-job lease prevents two workers from resuming the same job concurrently.
 
-A database-backed per-node monitoring lease prevents overlapping checks across worker instances.
-Replacement jobs retain the `(node_id, active_slot)` unique constraint created in Phase 2. Phase 6
-will add persisted reconciliation/locks around the provider and deployment components rather than
-adding blind create retries here.
+Cloud creation uses deterministic names and provider lookup-before-create so a crash after provider
+side effects does not automatically create a duplicate VPS. Deployment state is persisted between SSH
+substeps. Master update is idempotently rebuildable from the saved snapshot + deployment artifacts.
 
-## Safety boundary
+## Destructive boundary
 
-`DRY_RUN=true` and `ALLOW_REAL_INFRASTRUCTURE_MUTATION=false` are independent defaults. Provider and
-SSH/deployment mutation require explicit opt-in. The project still contains no Master mutation client,
-no replacement orchestrator, and no old-VPS deletion path.
+The orchestrator has exactly one old-VPS cleanup checkpoint. `OldVpsProtectionGuard` requires durable
+proof of new IP, deployment, master update, master verification, and final health before provider
+deletion is reachable. The old server stays alive through every earlier failure/rollback path.
+
+DRY_RUN simulates the candidate path without mutating the real current-node/current-VPS registry.

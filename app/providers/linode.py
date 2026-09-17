@@ -75,6 +75,26 @@ class LinodeProvider(HttpProviderAdapterMixin, ProviderAdapter):
         )
         return self._parse_server(body)
 
+    async def find_server_by_name(self, name: str) -> ProviderServer | None:
+        import json
+
+        body = await self._request_json(
+            self._client,
+            "GET",
+            "/linode/instances",
+            headers={"X-Filter": json.dumps({"label": name})},
+            params={"page_size": 100},
+        )
+        servers = body.get("data") or []
+        exact = [item for item in servers if str(item.get("label") or "") == name]
+        if not exact:
+            return None
+        if len(exact) > 1:
+            from app.providers.errors import ProviderError
+
+            raise ProviderError("multiple Linodes matched the recovery label", code="ambiguous_name")
+        return self._parse_server(exact[0])
+
     async def delete_server(self, provider_server_id: str) -> None:
         await self._request_json(
             self._client, "DELETE", f"/linode/instances/{provider_server_id}"

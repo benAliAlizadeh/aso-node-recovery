@@ -24,9 +24,13 @@ class HttpProviderAdapterMixin:
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         try:
-            response = await client.request(method, path, json=json)
+            response = await client.request(
+                method, path, json=json, params=params, headers=headers
+            )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             raise ProviderTransientError(
                 f"{self.provider_name} API network request failed", code="network_error"

@@ -25,6 +25,7 @@ from app.models.enums import (
     EventSeverity,
     EventType,
     NodeCheckOutcome,
+    ReplacementCheckpoint,
     ReplacementJobState,
     VpsInstanceRole,
     VpsInstanceState,
@@ -158,7 +159,20 @@ class ReplacementJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=ReplacementJobState.PENDING,
     )
+    checkpoint: Mapped[ReplacementCheckpoint] = mapped_column(
+        Enum(
+            ReplacementCheckpoint,
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            name="replacement_checkpoint",
+            length=32,
+        ),
+        nullable=False,
+        default=ReplacementCheckpoint.CREATED,
+    )
     active_slot: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
+    is_dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     old_vps_instance_id: Mapped[UUID | None] = mapped_column(
@@ -169,6 +183,22 @@ class ReplacementJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workflow_lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workflow_lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provisioning_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    master_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    new_ip_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deployment_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    master_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    master_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    final_health_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    old_vps_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -193,6 +223,10 @@ class Deployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "replacement_job_id", "attempt_number", name="deployment_attempt_per_job"
         ),
         CheckConstraint("attempt_number > 0", name="attempt_number_positive"),
+        CheckConstraint(
+            "panel_port IS NULL OR panel_port BETWEEN 1 AND 65535",
+            name="panel_port_range",
+        ),
     )
 
     replacement_job_id: Mapped[UUID] = mapped_column(
@@ -218,6 +252,13 @@ class Deployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    panel_username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    panel_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    web_base_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    access_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    api_token_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    panel_password_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    db_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     replacement_job: Mapped[ReplacementJob] = relationship(back_populates="deployments")
     vps_instance: Mapped[VpsInstance] = relationship()

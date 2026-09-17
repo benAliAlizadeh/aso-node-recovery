@@ -29,6 +29,18 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("char_length(key) > 0", name="key_not_blank"),
         CheckConstraint("char_length(display_name) > 0", name="display_name_not_blank"),
         CheckConstraint("char_length(credential_ref) > 0", name="credential_ref_not_blank"),
+        CheckConstraint(
+            "default_region IS NULL OR char_length(default_region) > 0",
+            name="default_region_not_blank",
+        ),
+        CheckConstraint(
+            "default_server_type IS NULL OR char_length(default_server_type) > 0",
+            name="default_server_type_not_blank",
+        ),
+        CheckConstraint(
+            "default_image IS NULL OR char_length(default_image) > 0",
+            name="default_image_not_blank",
+        ),
     )
 
     key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -58,6 +70,9 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=SecretReferenceBackend.ENVIRONMENT,
     )
     credential_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    default_region: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    default_server_type: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    default_image: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="provider")
     vps_instances: Mapped[list[VpsInstance]] = relationship(back_populates="provider")

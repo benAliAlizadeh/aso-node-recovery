@@ -27,6 +27,10 @@ class ProviderAdapter(ABC):
     async def reboot_server(self, provider_server_id: str) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    async def find_server_by_name(self, name: str) -> ProviderServer | None:
+        """Find an exact server name/label for crash reconciliation."""
+        raise NotImplementedError
 
     async def aclose(self) -> None:
         """Release adapter-owned resources. Stateless adapters may keep the default no-op."""

@@ -30,3 +30,5 @@ build/
 logs/
 *.log
 *.patch
+# Runtime generated secret files
+.runtime-secrets/

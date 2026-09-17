@@ -51,6 +51,27 @@ class ReplacementJobState(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ReplacementCheckpoint(StrEnum):
+    CREATED = "created"
+    PROVISIONING = "provisioning"
+    PROVISIONED = "provisioned"
+    CHECKING_IP = "checking_ip"
+    TEMP_CLEANUP = "temp_cleanup"
+    IP_VERIFIED = "ip_verified"
+    DEPLOYING = "deploying"
+    NODE_VERIFIED = "node_verified"
+    MASTER_UPDATING = "master_updating"
+    MASTER_UPDATED = "master_updated"
+    MASTER_VERIFYING = "master_verifying"
+    MASTER_VERIFIED = "master_verified"
+    FINAL_CHECK = "final_check"
+    FINAL_VERIFIED = "final_verified"
+    OLD_VPS_CLEANUP = "old_vps_cleanup"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class VpsInstanceState(StrEnum):
     PROVISIONING = "provisioning"
     RUNNING = "running"

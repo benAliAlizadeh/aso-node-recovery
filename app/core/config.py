@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Safety invariant: destructive actions remain disabled unless a later explicitly authorized
     # production configuration changes this value.
     dry_run: bool = True
+    allow_real_infrastructure_mutation: bool = False
     max_replacement_attempts: int = Field(default=5, ge=1, le=50)
     max_temporary_servers: int = Field(default=3, ge=1, le=100)
     max_concurrent_replacements: int = Field(default=2, ge=1, le=100)
@@ -51,6 +52,21 @@ class Settings(BaseSettings):
     check_host_poll_interval_seconds: float = Field(default=1.0, ge=0.2, le=30.0)
     check_host_result_timeout_seconds: float = Field(default=10.0, ge=1.0, le=120.0)
     monitoring_lease_seconds: int = Field(default=45, ge=5, le=600)
+
+    # Provider / provisioning adapters. Values are intentionally generic; actual region/type/image
+    # choices are supplied by the later replacement policy, not hard-coded here.
+    hetzner_api_base_url: str = "https://api.hetzner.cloud/v1"
+    linode_api_base_url: str = "https://api.linode.com/v4"
+    provisioning_timeout_seconds: float = Field(default=300.0, ge=30.0, le=3600.0)
+    provisioning_poll_interval_seconds: float = Field(default=3.0, ge=0.5, le=60.0)
+
+    # SSH / 3X-UI deployment defaults. Strict host-key verification remains enabled by default.
+    ssh_ready_timeout_seconds: float = Field(default=180.0, ge=10.0, le=1800.0)
+    ssh_poll_interval_seconds: float = Field(default=3.0, ge=0.5, le=60.0)
+    ssh_verify_host_key: bool = True
+    ssh_known_hosts_path: str | None = None
+    three_xui_version: str | None = None
+    three_xui_verify_tls: bool = True
 
     @model_validator(mode="after")
     def validate_monitoring_thresholds(self) -> "Settings":

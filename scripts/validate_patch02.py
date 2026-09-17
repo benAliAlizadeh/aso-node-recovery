@@ -32,7 +32,6 @@ EXPECTED_TABLES = {
 
 def main() -> int:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.3.0-registry-monitoring"
 
     settings = Settings(_env_file=None)
     assert settings.dry_run is True

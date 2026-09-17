@@ -21,31 +21,35 @@ Provider / Check-Host / SSH / Master adapters
 
 ## Current milestone
 
-Phase 2 persistence is complete and Phase 3 monitoring is implemented.
+Phases 2-5 are implemented: persistence/registry, monitoring, provider adapters/provisioning, and the
+SSH/3X-UI deployment engine. Phase 6 Master mutation and replacement orchestration remain absent.
 
-The persistence layer now covers providers, nodes, credential references, checks, VPS instances,
-replacement jobs, deployments, events, and operational settings. Alembic owns schema evolution.
+Provider responsibilities are split into:
 
-Monitoring is split into distinct concerns:
+- `ProviderAdapter`: provider-neutral lifecycle contract.
+- `HetznerProvider` / `LinodeProvider`: current documented API formats only.
+- `ProviderFactory`: dry-run/real adapter selection behind a double safety guard.
+- `ProvisioningSafetyPolicy`: attempts, temporary server count, and concurrency limits.
+- `ProvisioningService`: bounded lifecycle for the newly created temporary VPS only.
 
-- `CheckHostClient`: Check-Host HTTP protocol only.
-- `ReachabilityEvaluator`: provider-independent quorum calculation.
-- `NodeHealthCalculator`: failure/recovery counters and state policy.
-- `MonitoringWorker`: persistence + lease + one monitoring iteration.
-- `MonitoringScheduler`: timing only; no health business logic.
+Deployment responsibilities are split into:
+
+- `AsyncSshCommandExecutor`: transport only.
+- `SshReadinessProbe`: bounded SSH readiness retry.
+- `RemoteOsDetector` / `RemoteBootstrapper`: host preparation.
+- `ThreeXUiInstaller`: all upstream 3X-UI shell/install behavior.
+- `ThreeXUiNodeApiVerifier`: Bearer-token `/panel/api/server/status` verification.
+- `DeploymentStateMachine` / `DeploymentService`: ordered deployment workflow.
 
 ## Duplicate prevention
 
 A database-backed per-node monitoring lease prevents overlapping checks across worker instances.
-APScheduler additionally uses `max_instances=1` for the cycle job. The database lease is the durable
-control; the scheduler option is only a local guard.
-
-Replacement jobs also have a `(node_id, active_slot)` unique constraint. Active jobs use
-`active_slot=true`; terminal jobs will clear it to NULL in the Phase 6 workflow, allowing history while
-preventing two active replacements for one node.
+Replacement jobs retain the `(node_id, active_slot)` unique constraint created in Phase 2. Phase 6
+will add persisted reconciliation/locks around the provider and deployment components rather than
+adding blind create retries here.
 
 ## Safety boundary
 
-No provider adapter, SSH implementation, 3X-UI installer, master mutation client, or replacement
-orchestrator exists yet. Monitoring failure only persists state/events; it cannot touch infrastructure.
-`DRY_RUN=true` remains the default.
+`DRY_RUN=true` and `ALLOW_REAL_INFRASTRUCTURE_MUTATION=false` are independent defaults. Provider and
+SSH/deployment mutation require explicit opt-in. The project still contains no Master mutation client,
+no replacement orchestrator, and no old-VPS deletion path.

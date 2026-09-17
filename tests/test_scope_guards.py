@@ -1,16 +1,22 @@
 from pathlib import Path
 
 
-def test_patch02_keeps_future_external_integrations_deferred() -> None:
+def test_phase4_and_phase5_packages_are_implemented_but_master_and_bot_are_deferred() -> None:
     root = Path(__file__).resolve().parents[1] / "app"
-    # Provider APIs, deployment/SSH, Telegram, and master mutation are later patches.
-    reserved_packages = ["providers", "deployment", "bot"]
-    for package in reserved_packages:
-        python_files = sorted((root / package).glob("*.py"))
-        assert [path.name for path in python_files] == ["__init__.py"]
+    assert (root / "providers" / "hetzner.py").exists()
+    assert (root / "providers" / "linode.py").exists()
+    assert (root / "providers" / "provisioning.py").exists()
+    assert (root / "deployment" / "ssh.py").exists()
+    assert (root / "deployment" / "installer.py").exists()
+    assert (root / "deployment" / "service.py").exists()
+
+    # Telegram remains Phase 7. Master mutation/replacement orchestration remains Phase 6.
+    assert sorted(path.name for path in (root / "bot").glob("*.py")) == ["__init__.py"]
+    assert not (root / "services" / "replacement.py").exists()
+    assert not (root / "services" / "master_3xui.py").exists()
 
 
-def test_monitoring_and_worker_packages_are_now_implemented() -> None:
+def test_monitoring_packages_remain_implemented() -> None:
     root = Path(__file__).resolve().parents[1] / "app"
     assert (root / "monitoring" / "check_host.py").exists()
     assert (root / "monitoring" / "health.py").exists()

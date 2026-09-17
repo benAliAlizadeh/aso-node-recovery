@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-_FALLBACK_VERSION = "0.1.0-phase1-foundation"
+_FALLBACK_VERSION = "0.2.0-phase2-registry-core"
 
 
 @lru_cache(maxsize=1)

@@ -3,18 +3,21 @@
 Safety-first control plane for on-demand recovery of remote 3X-UI nodes whose public IPs become
 unreachable from Iran.
 
-> Current milestone: **Phase 1 — Foundation**. No provider, Check-Host, SSH, master 3X-UI, or
-> database business logic is implemented yet.
+> Current milestone: **Phase 2 — Registry Core / Patch 01**. Provider APIs, Check-Host, SSH,
+> replacement orchestration, master mutation, and database connectivity are not implemented yet.
 
 ## Safety status
 
 - `DRY_RUN=true` by default.
-- No production VPS operation exists in Phase 1.
-- No production master-panel mutation exists in Phase 1.
-- Secrets are configuration values and are redacted from structured logs.
+- No production VPS operation exists in this patch.
+- No production master-panel mutation exists in this patch.
+- Secrets are configuration values or secret references; registry models do not add plaintext secret
+  columns.
 - The permanent-spare-pool model is explicitly out of scope.
+- The old VPS deletion workflow does not exist yet and therefore cannot run prematurely.
 
-Read [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the authoritative scope and safety rules.
+Read [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the authoritative scope and safety rules and
+[docs/DATA_MODEL.md](docs/DATA_MODEL.md) for the Patch 01 registry design.
 
 ## Requirements
 
@@ -43,11 +46,23 @@ Example response:
 {
   "status": "ok",
   "service": "aso-node-recovery",
-  "version": "0.1.0-phase1-foundation",
+  "version": "0.2.0-phase2-registry-core",
   "environment": "development",
   "dry_run": true
 }
 ```
+
+## Patch 01 contents
+
+- deterministic SQLAlchemy metadata/naming conventions
+- `Provider` model
+- `Node` model
+- explicit local node -> master node mapping
+- `NodeCredential` secret-reference model
+- node state enum and central `NodeStateMachine`
+- registry/state-machine tests
+
+No connection/session, migration, or repository code is included yet; those are part of Patch 02.
 
 ## Validation
 
@@ -55,7 +70,7 @@ Example response:
 ruff check .
 ruff format --check .
 pytest
-python scripts/validate_phase1.py
+python scripts/validate_patch01.py
 ```
 
 ## Docker development
@@ -65,9 +80,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The Compose file includes PostgreSQL because it is part of the required project platform, but Phase 1
-application code deliberately does not connect to or model the database. Database implementation begins
-in Phase 2.
+PostgreSQL is already available in Compose for development. Patch 01 defines metadata but does not
+open database connections or mutate the schema.
 
 ## Repository layout
 
@@ -76,16 +90,16 @@ app/
   api/          FastAPI routes
   bot/          reserved for Telegram (Phase 7)
   core/         configuration, logging, errors, safety primitives
-  database/     reserved for persistence implementation (Phase 2)
-  models/       reserved for domain/database models (Phase 2)
+  database/     SQLAlchemy metadata foundation
+  models/       registry models and enums
   schemas/      API/domain schemas
-  services/     application services
+  services/     domain/application services, including node state policy
   providers/    provider adapters (Phase 4)
   monitoring/   monitoring engine (Phase 3)
   deployment/   SSH/3X-UI deployment (Phase 5)
   workers/      background workers
-migrations/     Alembic migrations from Phase 2
+migrations/     Alembic setup begins in Patch 02
 scripts/        validation/maintenance scripts
 tests/          automated tests
-docs/           development documentation
+docs/           architecture and data-model documentation
 ```

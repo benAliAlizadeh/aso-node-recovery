@@ -1,4 +1,6 @@
 # Migrations
 
-Alembic is part of the required stack, but schema implementation begins in Phase 2. No migration is
-created in Phase 1 because there is intentionally no database schema yet.
+Patch 01 defines the first SQLAlchemy registry metadata, but intentionally does **not** create or apply
+an Alembic migration yet. Patch 02 owns Alembic initialization and the first migration after the
+remaining Phase 2 models/constraints are present, avoiding an unnecessary intermediate production
+schema revision during initial development.

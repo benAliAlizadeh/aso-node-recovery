@@ -1,4 +1,4 @@
-# Architecture Foundation
+# Architecture
 
 ## Dependency direction
 
@@ -15,15 +15,27 @@ API / Telegram / Workers
 Application Services / Orchestrator
           |
           v
-Abstract contracts / domain policy
+Domain policy / persistence contracts
           ^
           |
 Provider / Check-Host / SSH / Master adapters
 ```
 
-## Phase boundaries
+## Current milestone
 
-Phase 1 contains only foundation concerns: package layout, configuration, secret handling, development
-containers, logging, common exceptions, health API, tests, and documentation. Later-phase packages are
-present only as empty namespace placeholders so the target structure is stable; their business logic is
-not implemented prematurely.
+The repository now contains Phase 1 foundation plus **Phase 2 / Patch 01 registry core**:
+
+- SQLAlchemy declarative metadata and naming conventions
+- Provider registry model
+- Node registry model with explicit master-node mapping
+- Node credential references without plaintext secret columns
+- Central node state machine
+
+Database sessions, Alembic migrations, repositories, monitoring records, replacement jobs, VPS
+instances, deployments, events, and settings remain deferred to Patch 02.
+
+## Safety boundary
+
+No provider adapter, Check-Host client, SSH implementation, 3X-UI installer, or master mutation client
+exists in this patch. `DRY_RUN=true` remains the default, and Patch 01 performs no infrastructure side
+effects.

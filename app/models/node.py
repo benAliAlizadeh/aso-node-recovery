@@ -20,6 +20,7 @@ from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.enums import NodeState, SecretReferenceBackend, SshAuthMethod
 
 if TYPE_CHECKING:
+    from app.models.operations import NodeCheck, ReplacementJob, VpsInstance
     from app.models.provider import Provider
 
 
@@ -84,8 +85,17 @@ class Node(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    monitoring_lease_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    monitoring_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     provider: Mapped[Provider] = relationship(back_populates="nodes")
+    checks: Mapped[list[NodeCheck]] = relationship(
+        back_populates="node", cascade="all, delete-orphan"
+    )
+    replacement_jobs: Mapped[list[ReplacementJob]] = relationship(back_populates="node")
+    vps_instances: Mapped[list[VpsInstance]] = relationship(back_populates="node")
     credentials: Mapped[NodeCredential | None] = relationship(
         back_populates="node",
         cascade="all, delete-orphan",

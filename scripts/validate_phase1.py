@@ -30,7 +30,10 @@ FORBIDDEN_PHASE1_FILES = (
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     missing = [path for path in REQUIRED_PATHS if not (root / path).exists()]
-    premature = [path for path in FORBIDDEN_PHASE1_FILES if (root / path).exists()]
+    version = (root / "VERSION").read_text(encoding="utf-8").strip()
+    premature = []
+    if version.startswith("0.1."):
+        premature = [path for path in FORBIDDEN_PHASE1_FILES if (root / path).exists()]
 
     scope = (root / "PROJECT_SCOPE.md").read_text(encoding="utf-8")
     required_scope_statements = (

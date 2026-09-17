@@ -10,22 +10,22 @@ from app.database import metadata  # noqa: E402
 from app.models import NodeState  # noqa: E402
 from app.services import NodeStateMachine  # noqa: E402
 
-EXPECTED_TABLES = {"providers", "nodes", "node_credentials"}
-RESERVED_PACKAGES = {"providers", "monitoring", "deployment", "workers", "bot"}
+CORE_TABLES = {"providers", "nodes", "node_credentials"}
 
 
 def main() -> int:
-    assert set(metadata.tables) == EXPECTED_TABLES
+    assert CORE_TABLES.issubset(metadata.tables)
     assert NodeStateMachine.can_transition(NodeState.UNKNOWN, NodeState.HEALTHY)
     assert not NodeStateMachine.can_transition(NodeState.UNKNOWN, NodeState.DEPLOYING)
 
-    for package in RESERVED_PACKAGES:
-        python_files = sorted((ROOT / "app" / package).glob("*.py"))
-        assert [path.name for path in python_files] == ["__init__.py"]
-
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.2.0-phase2-registry-core"
-    print("Patch 01 structural validation: PASS")
+    if version == "0.2.0-phase2-registry-core":
+        reserved_packages = {"providers", "monitoring", "deployment", "workers", "bot"}
+        for package in reserved_packages:
+            python_files = sorted((ROOT / "app" / package).glob("*.py"))
+            assert [path.name for path in python_files] == ["__init__.py"]
+
+    print("Patch 01 invariants validation: PASS")
     return 0
 
 

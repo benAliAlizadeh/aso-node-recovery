@@ -1,8 +1,6 @@
-"""Database metadata foundation.
-
-Connection/session management and repository implementations are intentionally deferred to Patch 02.
-"""
+"""Database metadata, async session management, and repositories."""
 
 from app.database.base import Base, metadata
+from app.database.session import Database
 
-__all__ = ["Base", "metadata"]
+__all__ = ["Base", "Database", "metadata"]

@@ -10,6 +10,7 @@ from app.models.enums import ProviderType, SecretReferenceBackend
 
 if TYPE_CHECKING:
     from app.models.node import Node
+    from app.models.operations import VpsInstance
 
 
 def _enum_values(enum_type: type[ProviderType] | type[SecretReferenceBackend]) -> list[str]:
@@ -59,3 +60,4 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     credential_ref: Mapped[str] = mapped_column(String(255), nullable=False)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="provider")
+    vps_instances: Mapped[list[VpsInstance]] = relationship(back_populates="provider")

@@ -1,15 +1,48 @@
 """Persistence models for the ASO local registry."""
 
-from app.models.enums import NodeState, ProviderType, SecretReferenceBackend, SshAuthMethod
+from app.models.enums import (
+    DeploymentState,
+    EventSeverity,
+    EventType,
+    NodeCheckOutcome,
+    NodeState,
+    ProviderType,
+    ReplacementJobState,
+    SecretReferenceBackend,
+    SshAuthMethod,
+    VpsInstanceRole,
+    VpsInstanceState,
+)
 from app.models.node import Node, NodeCredential
+from app.models.operations import (
+    Deployment,
+    Event,
+    NodeCheck,
+    ReplacementJob,
+    SystemSetting,
+    VpsInstance,
+)
 from app.models.provider import Provider
 
 __all__ = [
+    "Deployment",
+    "DeploymentState",
+    "Event",
+    "EventSeverity",
+    "EventType",
     "Node",
+    "NodeCheck",
+    "NodeCheckOutcome",
     "NodeCredential",
     "NodeState",
     "Provider",
     "ProviderType",
+    "ReplacementJob",
+    "ReplacementJobState",
     "SecretReferenceBackend",
     "SshAuthMethod",
+    "SystemSetting",
+    "VpsInstance",
+    "VpsInstanceRole",
+    "VpsInstanceState",
 ]

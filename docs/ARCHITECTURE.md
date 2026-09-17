@@ -6,13 +6,11 @@ External systems are adapters around application/domain logic. Provider-specific
 protocol details, SSH commands, master API details, and Telegram transport behavior must not leak into
 the replacement orchestration core.
 
-Conceptual dependency direction:
-
 ```text
-API / Telegram / Workers
+API / Telegram / Schedulers
           |
           v
-Application Services / Orchestrator
+Workers / Application Services / Orchestrator
           |
           v
 Domain policy / persistence contracts
@@ -23,19 +21,31 @@ Provider / Check-Host / SSH / Master adapters
 
 ## Current milestone
 
-The repository now contains Phase 1 foundation plus **Phase 2 / Patch 01 registry core**:
+Phase 2 persistence is complete and Phase 3 monitoring is implemented.
 
-- SQLAlchemy declarative metadata and naming conventions
-- Provider registry model
-- Node registry model with explicit master-node mapping
-- Node credential references without plaintext secret columns
-- Central node state machine
+The persistence layer now covers providers, nodes, credential references, checks, VPS instances,
+replacement jobs, deployments, events, and operational settings. Alembic owns schema evolution.
 
-Database sessions, Alembic migrations, repositories, monitoring records, replacement jobs, VPS
-instances, deployments, events, and settings remain deferred to Patch 02.
+Monitoring is split into distinct concerns:
+
+- `CheckHostClient`: Check-Host HTTP protocol only.
+- `ReachabilityEvaluator`: provider-independent quorum calculation.
+- `NodeHealthCalculator`: failure/recovery counters and state policy.
+- `MonitoringWorker`: persistence + lease + one monitoring iteration.
+- `MonitoringScheduler`: timing only; no health business logic.
+
+## Duplicate prevention
+
+A database-backed per-node monitoring lease prevents overlapping checks across worker instances.
+APScheduler additionally uses `max_instances=1` for the cycle job. The database lease is the durable
+control; the scheduler option is only a local guard.
+
+Replacement jobs also have a `(node_id, active_slot)` unique constraint. Active jobs use
+`active_slot=true`; terminal jobs will clear it to NULL in the Phase 6 workflow, allowing history while
+preventing two active replacements for one node.
 
 ## Safety boundary
 
-No provider adapter, Check-Host client, SSH implementation, 3X-UI installer, or master mutation client
-exists in this patch. `DRY_RUN=true` remains the default, and Patch 01 performs no infrastructure side
-effects.
+No provider adapter, SSH implementation, 3X-UI installer, master mutation client, or replacement
+orchestrator exists yet. Monitoring failure only persists state/events; it cannot touch infrastructure.
+`DRY_RUN=true` remains the default.

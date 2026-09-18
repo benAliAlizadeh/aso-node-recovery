@@ -474,6 +474,9 @@ SUMMARY
 main() {
   cd "$PROJECT_ROOT"
   [[ -f "$PROJECT_ROOT/VERSION" && -f "$COMPOSE_FILE" ]] || die "Run this installer from the ASO Node Recovery source tree"
+  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$PROJECT_ROOT" config core.fileMode false
+  fi
   install_docker
   command -v openssl >/dev/null 2>&1 || die "openssl is required"
   command -v curl >/dev/null 2>&1 || die "curl is required"

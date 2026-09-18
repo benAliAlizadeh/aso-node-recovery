@@ -89,6 +89,106 @@ import_secret_value() {
     python scripts/registry_cli.py secret-write --scope "$scope" --name "$name" | tail -n 1
 }
 
+
+latest_validator() {
+  local validator
+  validator="$(find "$PROJECT_ROOT/scripts" -maxdepth 1 -type f -name 'validate_patch*.py' -printf '%f\n' 2>/dev/null | sort -V | tail -n 1)"
+  [[ -n "$validator" ]] || { echo "No release validator found under scripts/." >&2; return 1; }
+  printf '%s' "$validator"
+}
+
+validate_release() {
+  local validator
+  validator="$(latest_validator)"
+  compose config >/dev/null
+  compose run --rm api python scripts/security_review.py
+  compose run --rm api python "scripts/${validator}"
+  echo "ASO validation passed (${validator})."
+}
+
+upgrade_stack() {
+  local skip_backup=false
+  if [[ "${1:-}" == "--skip-backup" ]]; then
+    skip_backup=true
+    shift
+  fi
+  [[ $# -eq 0 ]] || { echo "Usage: ./asoctl upgrade [--skip-backup]" >&2; return 2; }
+
+  local stage="preflight"
+  local source_version running_version
+  source_version="$(tr -d '\r\n' < "$PROJECT_ROOT/VERSION")"
+
+  upgrade_error() {
+    local rc=$?
+    trap - ERR
+    echo "[ASO][UPGRADE][ERROR] Failed during: ${stage} (exit ${rc})" >&2
+    echo "[ASO][UPGRADE] Existing named volumes and .env were not deleted." >&2
+    compose --profile telegram ps >&2 || true
+    compose logs --tail=120 api worker bot >&2 || true
+    return "$rc"
+  }
+  trap upgrade_error ERR
+
+  echo "[ASO][UPGRADE] Source version: ${source_version}"
+  if compose ps --status running api >/dev/null 2>&1; then
+    running_version="$( (compose exec -T api sh -c 'cat /app/VERSION 2>/dev/null || true' 2>/dev/null || true) | tr -d '\r\n')"
+    [[ -z "$running_version" ]] || echo "[ASO][UPGRADE] Running image version: ${running_version}"
+  fi
+
+  stage="repository file-mode normalization"
+  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Installer intentionally chmods launchers. Ignore mode-only changes so future git pull
+    # operations are not blocked on Linux hosts. Content changes are still protected by Git.
+    git -C "$PROJECT_ROOT" config core.fileMode false
+  fi
+
+  stage="environment and Compose preflight"
+  [[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE" >&2; return 1; }
+  command -v docker >/dev/null || { echo "docker is required" >&2; return 1; }
+  docker compose version >/dev/null
+  compose config >/dev/null
+
+  stage="database availability"
+  compose up -d postgres >/dev/null
+
+  if [[ "$skip_backup" == false ]]; then
+    stage="pre-upgrade database backup"
+    echo "[ASO][UPGRADE] Creating pre-upgrade database backup..."
+    compose --profile ops run --rm backup
+  else
+    echo "[ASO][UPGRADE][WARN] Pre-upgrade database backup explicitly skipped." >&2
+  fi
+
+  stage="Docker image build"
+  echo "[ASO][UPGRADE] Building images from the pulled source..."
+  compose build
+
+  stage="database migrations"
+  echo "[ASO][UPGRADE] Applying Alembic migrations..."
+  compose run --rm api alembic upgrade head
+
+  stage="application recreate"
+  echo "[ASO][UPGRADE] Recreating API and worker with the new image..."
+  compose up -d --force-recreate api worker
+  if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
+    compose --profile telegram up -d --force-recreate --no-deps bot
+  fi
+
+  stage="API health"
+  if ! bash "$PROJECT_ROOT/asoctl" health; then
+    return 1
+  fi
+
+  stage="release validation"
+  validate_release
+
+  stage="final status"
+  compose --profile telegram ps
+  trap - ERR
+  echo "[ASO][UPGRADE] Upgrade completed successfully: ${source_version}"
+  echo "[ASO][UPGRADE] .env, PostgreSQL data, runtime secrets, and backups were preserved."
+}
+
 setup_registry() {
   echo "[ASO] Smart registry onboarding (read-only discovery first)."
   echo "Provider/Master/Node APIs are validated before DB registration."
@@ -357,10 +457,10 @@ case "$cmd" in
     compose --profile ops run --rm backup
     ;;
   validate)
-    compose config >/dev/null
-    compose run --rm api python scripts/security_review.py
-    compose run --rm api python scripts/validate_patch19.py
-    echo "ASO validation passed."
+    validate_release
+    ;;
+  upgrade)
+    upgrade_stack "$@"
     ;;
   safety)
     printf 'ASO_DRY_RUN=%s\n' "$(get_env ASO_DRY_RUN)"
@@ -423,7 +523,9 @@ Commands:
   restart              Recreate app containers and reload .env
   migrate              Apply Alembic migrations
   backup               Create a PostgreSQL backup
-  validate             Validate Compose + production security + release structure
+  validate             Validate Compose + production security + latest release structure
+  upgrade [--skip-backup]
+                       In-place upgrade after git pull: backup, build, migrate, recreate, health, validate
   safety               Print non-secret safety switches
   setup                Interactive non-destructive Provider/Node/VPS onboarding
   registry             Show Provider/Node registry and readiness

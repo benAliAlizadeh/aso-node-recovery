@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.5.2-master-auto-routing** — Master 3X-UI connectivity now supports both same-host Docker deployments and remote Master servers with safe automatic routing.
+Current release: **1.5.3-safe-upgrade** — Master 3X-UI connectivity now supports both same-host Docker deployments and remote Master servers with safe automatic routing.
 
 ## Core replacement invariant
 
@@ -152,6 +152,23 @@ can add, inspect, test, rename, rotate provider/Node API credentials, rotate SSH
 remove local ASO registry records through inline buttons. Provider/Master/VPS discovery and access
 validation run before persistence. Registry removal never deletes provider infrastructure and never
 modifies the Master node.
+
+## In-place upgrades
+
+Once ASO is installed, do **not** rerun the installer for routine releases. Update the checkout and let
+`asoctl` rebuild the Docker image, migrate the existing database, recreate the application containers,
+and validate the new release while preserving `.env` and every named volume:
+
+```bash
+git config core.fileMode false
+git pull --ff-only
+./asoctl upgrade
+```
+
+A pre-upgrade PostgreSQL backup is created by default. Use `--skip-backup` only when you intentionally
+accept proceeding without that backup. The upgrade command never runs `down -v`, prunes volumes,
+resets PostgreSQL, regenerates `.env`, or enables destructive VPS/Master operations. See
+[In-place upgrades](docs/UPGRADE.md).
 
 ## Production
 

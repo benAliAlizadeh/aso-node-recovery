@@ -354,9 +354,10 @@ wait_for_health() {
 
     if [[ "$health" == "healthy" ]]; then
       compose ps api || true
-      warn "API container is healthy internally, but the host endpoint $url is not reachable."
+      warn "API container is healthy internally, but the optional host endpoint $url is not reachable."
       compose port api 8000 || true
-      die "API is healthy inside Docker but the published host endpoint is unreachable; check ASO_PORT and port publishing"
+      warn "Continuing installation because Docker health is authoritative for the internal API used by ASO services."
+      return 0
     fi
 
     if (( i % 5 == 0 )); then

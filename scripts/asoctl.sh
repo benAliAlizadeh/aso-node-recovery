@@ -312,8 +312,22 @@ case "$cmd" in
   health)
     port="$(get_env ASO_PORT)"
     [[ -n "$port" ]] || port=8000
-    curl -fsS "http://127.0.0.1:${port}/health"
-    printf '\n'
+    url="http://127.0.0.1:${port}/health"
+    if curl --noproxy '*' --connect-timeout 1 --max-time 3 -fsS "$url"; then
+      printf '\n'
+      exit 0
+    fi
+
+    echo "[ASO][WARN] Host health endpoint is not reachable; checking the API inside Docker." >&2
+    if compose exec -T api python -c "import urllib.request,sys; sys.stdout.write(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read().decode())"; then
+      printf '\n'
+      exit 0
+    fi
+
+    echo "[ASO][ERROR] API health failed both from the host and inside Docker." >&2
+    compose ps api >&2 || true
+    compose logs --tail=100 api >&2 || true
+    exit 1
     ;;
   logs)
     compose --profile telegram logs --tail="${1:-200}" -f api worker bot

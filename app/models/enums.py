@@ -6,6 +6,17 @@ class ProviderType(StrEnum):
     LINODE = "linode"
 
 
+class NodeOperationMode(StrEnum):
+    DISABLED = "disabled"
+    MONITOR_ONLY = "monitor_only"
+    AUTO_REPAIR = "auto_repair"
+
+
+class RuntimeExecutionMode(StrEnum):
+    DRY_RUN = "dry_run"
+    LIVE = "live"
+
+
 class NodeState(StrEnum):
     UNKNOWN = "unknown"
     HEALTHY = "healthy"

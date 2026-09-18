@@ -14,7 +14,7 @@ def require(path: str, *needles: str) -> None:
 
 def main() -> None:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if version not in {"1.1.0-smart-onboarding", "1.2.0-telegram-registry-ui", "1.3.0-api-health-center"}:
+    if version not in {"1.1.0-smart-onboarding", "1.2.0-telegram-registry-ui", "1.3.0-api-health-center", "1.4.0-runtime-controls"}:
         raise SystemExit(f"unexpected VERSION: {version}")
 
     require(

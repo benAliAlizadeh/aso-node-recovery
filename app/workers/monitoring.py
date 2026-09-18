@@ -47,8 +47,13 @@ class MonitoringWorker:
         self.health_calculator = NodeHealthCalculator(self.policy)
 
     async def run_cycle(self) -> MonitoringCycleResult:
-        if self.operational_settings is not None and await self.operational_settings.is_paused():
-            return MonitoringCycleResult(0, 0, 0, 0)
+        if self.operational_settings is not None:
+            if await self.operational_settings.is_paused():
+                return MonitoringCycleResult(0, 0, 0, 0)
+            if not await self.operational_settings.monitoring_enabled(
+                default=self.settings.monitoring_scheduler_enabled
+            ):
+                return MonitoringCycleResult(0, 0, 0, 0)
 
         async with self.database.session() as session:
             nodes = await NodeRepository(session).list_monitoring_enabled()

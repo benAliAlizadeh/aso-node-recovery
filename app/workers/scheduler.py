@@ -24,34 +24,30 @@ class SystemWorkerScheduler:
     def start(self) -> None:
         if self._scheduler is not None:
             return
-        if not self.settings.worker_scheduler_enabled:
-            raise RuntimeError("ASO_WORKER_SCHEDULER_ENABLED must be true to start workers")
-
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         scheduler = AsyncIOScheduler(timezone="UTC")
-        if self.settings.monitoring_scheduler_enabled:
-            scheduler.add_job(
-                self.monitoring.run_cycle,
-                "interval",
-                seconds=self.settings.check_interval_seconds,
-                id="aso-monitoring-cycle",
-                replace_existing=True,
-                coalesce=True,
-                max_instances=1,
-            )
-        if self.settings.replacement_worker_enabled:
-            scheduler.add_job(
-                self.replacement.run_cycle,
-                "interval",
-                seconds=self.settings.replacement_worker_interval_seconds,
-                id="aso-replacement-cycle",
-                replace_existing=True,
-                coalesce=True,
-                max_instances=1,
-            )
-        if not scheduler.get_jobs():
-            raise RuntimeError("no worker is enabled; enable monitoring and/or replacement worker")
+        # Both lightweight cycles stay scheduled while the worker process is enabled. Persisted
+        # runtime switches decide whether each cycle actually does work, allowing Telegram to
+        # enable/disable monitoring and automatic repair without recreating containers.
+        scheduler.add_job(
+            self.monitoring.run_cycle,
+            "interval",
+            seconds=self.settings.check_interval_seconds,
+            id="aso-monitoring-cycle",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            self.replacement.run_cycle,
+            "interval",
+            seconds=self.settings.replacement_worker_interval_seconds,
+            id="aso-replacement-cycle",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
         scheduler.start()
         self._scheduler = scheduler
 

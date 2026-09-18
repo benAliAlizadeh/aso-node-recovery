@@ -677,6 +677,7 @@ class TelegramRegistryController:
             f"Node API Token: {'configured' if node.has_node_api_token else 'not configured'}"
         )
         rows = [
+            [InlineKeyboardButton("⚙️ Monitoring / Repair", callback_data=f"o.n.{node.id.hex}")],
             [InlineKeyboardButton("🧪 Test All Access", callback_data=f"r.n.test.{node.id.hex}"), InlineKeyboardButton("✏️ Rename", callback_data=f"r.n.name.{node.id.hex}")],
             [InlineKeyboardButton("🔑 Replace Node API Token", callback_data=f"r.n.token.{node.id.hex}"), InlineKeyboardButton("🔐 Replace SSH", callback_data=f"r.n.ssh.{node.id.hex}")],
             [InlineKeyboardButton("🗑 Remove from ASO", callback_data=f"r.n.remove.{node.id.hex}")],

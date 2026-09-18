@@ -50,7 +50,7 @@ def format_nodes(nodes: list[NodeSnapshot]) -> str:
     lines = ["Nodes:"]
     for node in nodes:
         lines.append(
-            f"- {node.name} [{node.state.value}] {node.host}:{node.port} "
+            f"- {node.name} [{node.state.value}/{node.operation_mode.value}] {node.host}:{node.port} "
             f"(id {short_id(node.id)})"
         )
     return "\n".join(lines)
@@ -63,6 +63,7 @@ def format_node_detail(detail: NodeDetailSnapshot) -> str:
             f"Node: {node.name}",
             f"ID: {node.id}",
             f"State: {node.state.value}",
+            f"Operation mode: {node.operation_mode.value}",
             f"Endpoint: {node.host}:{node.port}",
             f"Master Node ID: {detail.master_node_id}",
             f"Monitoring: {'on' if detail.monitoring_enabled else 'off'}",

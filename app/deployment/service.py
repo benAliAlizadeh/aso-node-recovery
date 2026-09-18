@@ -58,15 +58,21 @@ class DeploymentService:
         *,
         public_host: str,
         on_transition: TransitionCallback | None = None,
+        dry_run: bool | None = None,
     ) -> DeploymentResult:
         if deployment.state is None:
             deployment.state = DeploymentState.PENDING
-        if self.settings.dry_run:
+        effective_dry_run = self.settings.dry_run if dry_run is None else bool(dry_run)
+        if self.settings.dry_run or effective_dry_run:
             await self._simulate_success(deployment, public_host, on_transition)
             return DeploymentResult(config=self._dry_run_config(public_host), dry_run=True)
         if not self.settings.allow_real_infrastructure_mutation:
             raise SafetyViolationError(
                 "real SSH/deployment requires ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=true"
+            )
+        if self.settings.replacement_emergency_stop:
+            raise SafetyViolationError(
+                "real SSH/deployment is blocked by ASO_REPLACEMENT_EMERGENCY_STOP=true"
             )
 
         installation_may_exist = deployment.state in {

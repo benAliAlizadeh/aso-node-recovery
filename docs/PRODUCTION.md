@@ -15,7 +15,7 @@ docker compose -f docker-compose.prod.yml up -d postgres
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 ```
 
-Current migration head: `20260919_0004`.
+Current migration head: `20260919_0005`.
 
 ## 3. Start safely
 
@@ -24,8 +24,7 @@ docker compose -f docker-compose.prod.yml up -d api worker
 docker compose -f docker-compose.prod.yml --profile telegram up -d bot
 ```
 
-Worker startup requires `ASO_WORKER_SCHEDULER_ENABLED=true` and at least monitoring or replacement
-worker enabled. Keep the replacement worker disabled during initial monitoring-only validation.
+The worker container keeps monitoring and replacement scheduler ticks registered. Persisted runtime controls decide whether each cycle performs work, so Telegram toggles do not require container recreation. Keep the replacement worker disabled during initial monitoring-only validation.
 
 ## 4. Validate
 

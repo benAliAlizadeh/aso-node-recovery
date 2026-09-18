@@ -16,12 +16,18 @@ class ProviderFactory:
         self.settings = settings
         self.secret_resolver = secret_resolver or SecretResolver()
 
-    def create(self, provider: Provider) -> ProviderAdapter:
-        if self.settings.dry_run:
+    def create(self, provider: Provider, *, dry_run: bool | None = None) -> ProviderAdapter:
+        effective_dry_run = self.settings.dry_run if dry_run is None else dry_run
+        # Environment DRY_RUN is a hard gate; a runtime control can never bypass it.
+        if self.settings.dry_run or effective_dry_run:
             return DryRunProvider(provider.provider_type)
         if not self.settings.allow_real_infrastructure_mutation:
             raise SafetyViolationError(
                 "real provider mutations require ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=true"
+            )
+        if self.settings.replacement_emergency_stop:
+            raise SafetyViolationError(
+                "real provider mutations are blocked by ASO_REPLACEMENT_EMERGENCY_STOP=true"
             )
 
         token = self.secret_resolver.resolve(provider.credential_backend, provider.credential_ref)

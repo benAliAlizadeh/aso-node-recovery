@@ -12,6 +12,8 @@ from app.models import (
     Node,
     NodeCheck,
     NodeCredential,
+    NodeOperationMode,
+    NodeState,
     Provider,
     ReplacementJob,
     SystemSetting,
@@ -33,15 +35,33 @@ class NodeRepository(SqlAlchemyRepository[Node]):
     model = Node
 
     def monitoring_query(self) -> Select[tuple[Node]]:
-        return select(Node).where(Node.monitoring_enabled.is_(True)).order_by(Node.name)
+        return (
+            select(Node)
+            .where(
+                Node.monitoring_enabled.is_(True),
+                Node.operation_mode != NodeOperationMode.DISABLED,
+            )
+            .order_by(Node.name)
+        )
 
     async def list_monitoring_enabled(self) -> list[Node]:
         return list((await self.session.scalars(self.monitoring_query())).all())
 
     async def list_failed(self, *, limit: int = 100) -> list[Node]:
-        from app.models import NodeState
-
         query = select(Node).where(Node._state == NodeState.FAILED).order_by(Node.name).limit(limit)
+        return list((await self.session.scalars(query)).all())
+
+    async def list_auto_repair_failed(self, *, limit: int = 100) -> list[Node]:
+        query = (
+            select(Node)
+            .where(
+                Node._state == NodeState.FAILED,
+                Node.operation_mode == NodeOperationMode.AUTO_REPAIR,
+                Node.monitoring_enabled.is_(True),
+            )
+            .order_by(Node.name)
+            .limit(limit)
+        )
         return list((await self.session.scalars(query)).all())
 
     async def list_all(self, *, limit: int = 200) -> list[Node]:
@@ -72,6 +92,7 @@ class NodeRepository(SqlAlchemyRepository[Node]):
             .where(
                 Node.id == node_id,
                 Node.monitoring_enabled.is_(True),
+                Node.operation_mode != NodeOperationMode.DISABLED,
                 or_(Node.monitoring_lease_until.is_(None), Node.monitoring_lease_until <= now),
             )
             .values(monitoring_lease_token=token, monitoring_lease_until=lease_until)

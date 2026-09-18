@@ -20,12 +20,15 @@ from app.models import (
     EventSeverity,
     EventType,
     NodeCheckOutcome,
+    NodeOperationMode,
     NodeState,
     ReplacementCheckpoint,
     ReplacementJobState,
+    RuntimeExecutionMode,
 )
 from app.replacement.orchestrator import ReplacementOrchestrator, ReplacementRunResult
-from app.services.operational_settings import OperationalSettingsService
+from app.services.node_state import NodeStateMachine
+from app.services.operational_settings import OperationalSettingsService, RuntimeControlSnapshot
 from app.workers.monitoring import MonitoringWorker
 
 
@@ -47,6 +50,7 @@ class NodeSnapshot:
     host: str
     port: int
     state: NodeState
+    operation_mode: NodeOperationMode
     consecutive_failures: int
     last_successful_check_at: datetime | None
 
@@ -127,12 +131,13 @@ class ControlService:
             node_counts = await NodeRepository(session).count_by_state()
             active_vps = await VpsInstanceRepository(session).count_active()
             active_jobs = await ReplacementJobRepository(session).count_active()
+        controls = await self.operational_settings.snapshot(self.settings)
         return DashboardSnapshot(
             node_counts=node_counts,
             active_vps_count=active_vps,
             active_replacement_count=active_jobs,
-            paused=await self.operational_settings.is_paused(),
-            dry_run=self.settings.dry_run,
+            paused=controls.paused,
+            dry_run=controls.effective_dry_run,
             real_mutation_allowed=self.settings.allow_real_infrastructure_mutation,
         )
 
@@ -293,6 +298,72 @@ class ControlService:
             )
             await session.commit()
 
+    async def runtime_controls(self) -> RuntimeControlSnapshot:
+        return await self.operational_settings.snapshot(self.settings)
+
+    async def set_runtime_monitoring(self, enabled: bool, *, actor_user_id: int) -> bool:
+        return await self.operational_settings.set_monitoring_enabled(
+            enabled, actor_user_id=actor_user_id
+        )
+
+    async def set_runtime_replacement(self, enabled: bool, *, actor_user_id: int) -> bool:
+        return await self.operational_settings.set_replacement_enabled(
+            enabled, actor_user_id=actor_user_id
+        )
+
+    async def set_runtime_execution_mode(
+        self, mode: RuntimeExecutionMode, *, actor_user_id: int
+    ) -> bool:
+        return await self.operational_settings.set_execution_mode(
+            mode, self.settings, actor_user_id=actor_user_id
+        )
+
+    async def set_node_operation_mode(
+        self, node_id: UUID, mode: NodeOperationMode, *, actor_user_id: int
+    ) -> None:
+        async with self.database.session() as session:
+            nodes = NodeRepository(session)
+            node = await nodes.get(node_id)
+            if node is None:
+                raise ValueError("node does not exist")
+            active = await ReplacementJobRepository(session).get_active_for_node(node_id)
+            if active is not None:
+                raise ValueError("node operation mode cannot change during an active replacement")
+
+            if mode is NodeOperationMode.AUTO_REPAIR:
+                current_vps = await VpsInstanceRepository(session).get_current_for_node(node_id)
+                provider = await ProviderRepository(session).get(node.provider_id)
+                if current_vps is None or not current_vps.provider_server_id:
+                    raise ValueError("auto repair requires a registered current VPS")
+                if provider is None or not provider.is_active:
+                    raise ValueError("auto repair requires an active provider")
+
+            node.operation_mode = mode
+            node.monitoring_enabled = mode is not NodeOperationMode.DISABLED
+            if mode is NodeOperationMode.DISABLED:
+                node.monitoring_lease_token = None
+                node.monitoring_lease_until = None
+                NodeStateMachine.transition(node, NodeState.DISABLED)
+            elif node.state is NodeState.DISABLED:
+                NodeStateMachine.transition(node, NodeState.UNKNOWN)
+
+            await EventRepository(session).add(
+                Event(
+                    node_id=node.id,
+                    replacement_job_id=None,
+                    event_type=EventType.SETTING_CHANGED,
+                    severity=(
+                        EventSeverity.WARNING
+                        if mode is NodeOperationMode.AUTO_REPAIR
+                        else EventSeverity.INFO
+                    ),
+                    message=f"Node operation mode changed to {mode.value}",
+                    payload={"actor_user_id": actor_user_id, "mode": mode.value},
+                    created_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
     async def set_paused(self, paused: bool, *, actor_user_id: int) -> bool:
         return await self.operational_settings.set_paused(
             paused,
@@ -300,17 +371,22 @@ class ControlService:
         )
 
     async def settings_snapshot(self) -> dict[str, Any]:
+        controls = await self.operational_settings.snapshot(self.settings)
         return {
             "environment": self.settings.environment,
-            "dry_run": self.settings.dry_run,
+            "execution_mode": controls.execution_mode.value,
+            "effective_dry_run": controls.effective_dry_run,
+            "host_dry_run_lock": self.settings.dry_run,
             "allow_real_infrastructure_mutation": self.settings.allow_real_infrastructure_mutation,
-            "system_paused": await self.operational_settings.is_paused(),
-            "monitoring_scheduler_enabled": self.settings.monitoring_scheduler_enabled,
+            "system_paused": controls.paused,
+            "runtime_monitoring_enabled": controls.monitoring_enabled,
             "check_interval_seconds": self.settings.check_interval_seconds,
             "failure_threshold": self.settings.failure_threshold,
             "recovery_threshold": self.settings.recovery_threshold,
-            "replacement_worker_enabled": self.settings.replacement_worker_enabled,
+            "runtime_auto_repair_enabled": controls.replacement_enabled,
             "replacement_emergency_stop": self.settings.replacement_emergency_stop,
+            "live_capable": controls.live_capable,
+            "live_block_reason": controls.live_block_reason or "—",
             "max_replacement_attempts": self.settings.max_replacement_attempts,
             "max_temporary_servers": self.settings.max_temporary_servers,
             "max_concurrent_replacements": self.settings.max_concurrent_replacements,
@@ -348,6 +424,7 @@ class ControlService:
             host=node.current_host,
             port=node.current_port,
             state=node.state,
+            operation_mode=node.operation_mode or NodeOperationMode.MONITOR_ONLY,
             consecutive_failures=node.consecutive_failures,
             last_successful_check_at=node.last_successful_check_at,
         )

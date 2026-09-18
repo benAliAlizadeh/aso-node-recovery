@@ -36,9 +36,9 @@ def test_asoctl_exposes_registry_and_safe_monitoring_workflow() -> None:
     assert "registry_cli.py smart-preview-node" in source
     assert "registry_cli.py smart-add-node" in source
     assert "monitoring-dry-run" in source
-    assert "set_env ASO_DRY_RUN true" in source
-    assert "set_env ASO_REPLACEMENT_WORKER_ENABLED false" in source
-    assert "set_env ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION false" in source
+    assert "runtime_control_cli.py dry-run" in source
+    assert "runtime_control_cli.py auto-off" in source
+    assert "runtime_control_cli.py monitoring-on" in source
 
 
 def test_registry_setup_is_documented_as_non_destructive() -> None:

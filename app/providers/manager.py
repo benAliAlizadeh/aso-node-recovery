@@ -8,23 +8,26 @@ from app.providers.factory import ProviderFactory
 
 
 class ProviderManager:
-    """Keep one adapter instance per configured provider during the process lifetime.
+    """Keep adapter instances per provider and execution mode.
 
-    Besides avoiding unnecessary client creation, this preserves DryRunProvider state across create,
-    inspect, reboot, and delete operations in development.
+    A live-capable host may still run an individual replacement in DRY_RUN. Keeping dry-run and live
+    adapters in separate cache slots prevents a previously cached adapter from crossing that safety
+    boundary.
     """
 
     def __init__(self, factory: ProviderFactory) -> None:
         self.factory = factory
-        self._adapters: dict[UUID, ProviderAdapter] = {}
+        self._adapters: dict[tuple[UUID, bool], ProviderAdapter] = {}
 
-    def get(self, provider: Provider) -> ProviderAdapter:
+    def get(self, provider: Provider, *, dry_run: bool | None = None) -> ProviderAdapter:
         if provider.id is None:
             raise ValueError("provider must have a persisted id before adapter resolution")
-        adapter = self._adapters.get(provider.id)
+        effective_dry_run = self.factory.settings.dry_run if dry_run is None else bool(dry_run)
+        key = (provider.id, effective_dry_run)
+        adapter = self._adapters.get(key)
         if adapter is None:
-            adapter = self.factory.create(provider)
-            self._adapters[provider.id] = adapter
+            adapter = self.factory.create(provider, dry_run=effective_dry_run)
+            self._adapters[key] = adapter
         return adapter
 
     async def close(self) -> None:

@@ -139,3 +139,9 @@ The project is successful when it can, under production authorization:
 
 ASO Node Recovery does **not** maintain permanent spare VPS or IP pools. Replacement capacity
 is created only after a node requires recovery and is cleaned up after the workflow finishes.
+## Runtime control extension (v1.4)
+
+Per-node operating modes are explicit: disabled, monitor-only, or auto-repair. Telegram can change
+runtime monitoring, automatic-repair, and dry-run/live intent without editing database records by
+hand. Persisted runtime intent never bypasses environment safety gates; when the host is not
+live-capable the effective execution mode is always dry-run.

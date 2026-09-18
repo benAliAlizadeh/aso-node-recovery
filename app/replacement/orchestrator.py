@@ -137,7 +137,12 @@ class ReplacementOrchestrator:
 
     async def trigger(self, node_id: UUID) -> UUID:
         """Create one active replacement job for a FAILED node, idempotently."""
-        self._assert_not_emergency_stopped()
+        effective_dry_run = (
+            await self.operational_settings.effective_dry_run(self.settings)
+            if self.operational_settings is not None
+            else self.settings.dry_run
+        )
+        self._assert_not_emergency_stopped(dry_run=effective_dry_run)
         await self._assert_not_paused()
         async with self.admission_lock.acquire() as acquired:
             if not acquired:
@@ -175,7 +180,7 @@ class ReplacementOrchestrator:
                     state=ReplacementJobState.PENDING,
                     checkpoint=ReplacementCheckpoint.CREATED,
                     active_slot=True,
-                    is_dry_run=self.settings.dry_run,
+                    is_dry_run=effective_dry_run,
                     attempt_count=0,
                     max_attempts=self.settings.max_replacement_attempts,
                     old_vps_instance_id=old_vps.id,
@@ -211,7 +216,9 @@ class ReplacementOrchestrator:
                 if checkpoint in _TERMINAL:
                     return ReplacementRunResult(job_id, checkpoint, terminal=True)
                 try:
-                    self._assert_not_emergency_stopped()
+                    job_dry_run = await self._job_is_dry_run(job_id)
+                    await self._assert_runtime_execution_allowed(job_dry_run)
+                    self._assert_not_emergency_stopped(dry_run=job_dry_run)
                     await self._assert_not_paused()
                     await self._dispatch(job_id, token, checkpoint)
                 except (
@@ -329,7 +336,7 @@ class ReplacementOrchestrator:
             requested_at = job.provisioning_requested_at
             await session.commit()
 
-        adapter = self.provider_manager.get(provider)
+        adapter = self.provider_manager.get(provider, dry_run=job.is_dry_run)
         provider_server = await adapter.find_server_by_name(request.name)
         if provider_server is None:
             if requested_at is not None:
@@ -410,7 +417,7 @@ class ReplacementOrchestrator:
             await self._renew_lease_in_session(session, job_id, lease_token)
             await session.commit()
 
-        adapter = self.provider_manager.get(provider)
+        adapter = self.provider_manager.get(provider, dry_run=job.is_dry_run)
         try:
             server = await self.provisioning.wait_until_ready(adapter, provider_server_id)
         except ProviderNotFoundError:
@@ -509,7 +516,7 @@ class ReplacementOrchestrator:
             and provider is not None
             and new_vps.state is not VpsInstanceState.DELETED
         ):
-            adapter = self.provider_manager.get(provider)
+            adapter = self.provider_manager.get(provider, dry_run=job.is_dry_run)
             async with self.database.session() as session:
                 job = await self._require_job(session, job_id)
                 node = await self._require_node(session, job.node_id)
@@ -603,6 +610,7 @@ class ReplacementOrchestrator:
                     ssh,
                     public_host=host,
                     on_transition=persist_transition,
+                    dry_run=job.is_dry_run,
                 )
             except Exception:
                 await self._add_event(
@@ -828,9 +836,9 @@ class ReplacementOrchestrator:
             await session.commit()
 
     async def _stage_old_vps_cleanup(self, job_id: UUID, lease_token: str) -> None:
-        self._assert_not_emergency_stopped()
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)
+            self._assert_not_emergency_stopped(dry_run=job.is_dry_run)
             new_vps = await self._require_new_vps(session, job)
             deployment = await self._require_deployment(session, job)
             if job.is_dry_run:
@@ -857,7 +865,7 @@ class ReplacementOrchestrator:
                 await self._renew_lease_in_session(session, job_id, lease_token)
                 await session.commit()
 
-        adapter = self.provider_manager.get(provider)
+        adapter = self.provider_manager.get(provider, dry_run=job.is_dry_run)
         if job.is_dry_run:
             try:
                 await self.provisioning.delete_temporary(adapter, new_server_id)
@@ -1237,8 +1245,23 @@ class ReplacementOrchestrator:
         }
         return mapping[status]
 
-    def _assert_not_emergency_stopped(self) -> None:
-        if self.settings.replacement_emergency_stop:
+    async def _assert_runtime_execution_allowed(self, job_dry_run: bool) -> None:
+        if job_dry_run or self.operational_settings is None:
+            return
+        if await self.operational_settings.effective_dry_run(self.settings):
+            raise ReplacementDeferredError(
+                "live replacement paused because runtime execution is now DRY_RUN"
+            )
+
+    async def _job_is_dry_run(self, job_id: UUID) -> bool:
+        async with self.database.session() as session:
+            job = await self._require_job(session, job_id)
+            return bool(job.is_dry_run)
+
+    def _assert_not_emergency_stopped(self, *, dry_run: bool = False) -> None:
+        # The emergency stop is a hard gate for real infrastructure mutation. Safe simulations are
+        # still allowed so operators can validate workflows while production remains locked.
+        if self.settings.replacement_emergency_stop and not dry_run:
             raise ReplacementDeferredError("replacement emergency stop is enabled")
 
     @staticmethod

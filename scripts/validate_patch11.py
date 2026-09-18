@@ -12,6 +12,7 @@ def main() -> None:
         "1.1.0-smart-onboarding",
         "1.2.0-telegram-registry-ui",
         "1.3.0-api-health-center",
+        "1.4.0-runtime-controls",
     }
     assert 'version = "1.1.0"' in (ROOT / "pyproject.toml").read_text()
 
@@ -29,9 +30,9 @@ def main() -> None:
         "setup_registry",
         "telegram-check",
         "monitoring-dry-run",
-        "set_env ASO_DRY_RUN true",
-        "set_env ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION false",
-        "set_env ASO_REPLACEMENT_WORKER_ENABLED false",
+        "runtime_control_cli.py dry-run",
+        "runtime_control_cli.py auto-off",
+        "runtime_control_cli.py monitoring-on",
     ):
         assert token in asoctl
     assert (

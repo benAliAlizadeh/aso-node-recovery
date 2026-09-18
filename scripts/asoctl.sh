@@ -345,7 +345,7 @@ case "$cmd" in
   validate)
     compose config >/dev/null
     compose run --rm api python scripts/security_review.py
-    compose run --rm api python scripts/validate_patch14.py
+    compose run --rm api python scripts/validate_patch16.py
     echo "ASO validation passed."
     ;;
   safety)
@@ -373,22 +373,28 @@ case "$cmd" in
     compose --profile telegram run --rm --no-deps bot python scripts/telegram_probe.py
     compose --profile telegram ps bot
     ;;
+  controls)
+    compose run --rm api python scripts/runtime_control_cli.py show
+    ;;
   monitoring-dry-run)
-    set_env ASO_DRY_RUN true
-    set_env ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION false
-    set_env ASO_ALLOW_OLD_VPS_DELETION false
-    set_env ASO_REPLACEMENT_WORKER_ENABLED false
-    set_env ASO_REPLACEMENT_EMERGENCY_STOP true
-    set_env ASO_WORKER_SCHEDULER_ENABLED true
-    set_env ASO_MONITORING_SCHEDULER_ENABLED true
-    compose up -d --force-recreate worker
-    echo "Monitoring scheduler enabled in safe DRY_RUN mode. Replacement remains disabled."
+    compose run --rm api python scripts/runtime_control_cli.py dry-run
+    compose run --rm api python scripts/runtime_control_cli.py auto-off
+    compose run --rm api python scripts/runtime_control_cli.py monitoring-on
+    compose up -d worker
+    echo "Monitoring enabled with effective DRY_RUN; automatic repair disabled."
     ;;
   monitoring-off)
-    set_env ASO_MONITORING_SCHEDULER_ENABLED false
-    set_env ASO_WORKER_SCHEDULER_ENABLED false
-    compose up -d --force-recreate worker
-    echo "Monitoring scheduler disabled."
+    compose run --rm api python scripts/runtime_control_cli.py monitoring-off
+    echo "Runtime monitoring disabled. No container recreation required."
+    ;;
+  auto-repair-on)
+    compose run --rm api python scripts/runtime_control_cli.py auto-on
+    compose up -d worker
+    echo "Automatic repair worker enabled. Node AUTO REPAIR modes and execution safety gates still apply."
+    ;;
+  auto-repair-off)
+    compose run --rm api python scripts/runtime_control_cli.py auto-off
+    echo "Automatic repair worker disabled."
     ;;
   help|-h|--help)
     cat <<'HELP'
@@ -408,6 +414,7 @@ Commands:
   setup                Interactive non-destructive Provider/Node/VPS onboarding
   registry             Show Provider/Node registry and readiness
   telegram-check       Verify Telegram API token and bot container
+  controls             Show persisted runtime monitoring/repair controls
   monitoring-dry-run   Enable automatic monitoring only, with destructive paths locked
   monitoring-off       Disable the automatic monitoring scheduler
 HELP

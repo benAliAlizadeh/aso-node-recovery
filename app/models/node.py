@@ -17,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import NodeState, SecretReferenceBackend, SshAuthMethod
+from app.models.enums import NodeOperationMode, NodeState, SecretReferenceBackend, SshAuthMethod
 
 if TYPE_CHECKING:
     from app.models.operations import NodeCheck, ReplacementJob, VpsInstance
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 def _enum_values(
-    enum_type: type[NodeState] | type[SecretReferenceBackend] | type[SshAuthMethod],
+    enum_type: type[NodeOperationMode] | type[NodeState] | type[SecretReferenceBackend] | type[SshAuthMethod],
 ) -> list[str]:
     return [item.value for item in enum_type]
 
@@ -77,6 +77,18 @@ class Node(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=lambda: datetime.now(UTC),
     )
 
+    operation_mode: Mapped[NodeOperationMode] = mapped_column(
+        Enum(
+            NodeOperationMode,
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            name="node_operation_mode",
+            length=32,
+        ),
+        nullable=False,
+        default=NodeOperationMode.MONITOR_ONLY,
+    )
     monitoring_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     consecutive_successes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

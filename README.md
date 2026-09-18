@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.3.0-api-health-center** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
+Current release: **1.4.0-runtime-controls** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
 
 ## Core replacement invariant
 
@@ -38,6 +38,20 @@ Only then may the old VPS be deleted.
 - PostgreSQL backup/restore tooling
 - hardened production Docker Compose
 - separated explicitly-authorized production replacement E2E test
+
+## Runtime monitoring and repair controls
+
+Authorized Telegram operators can manage runtime behavior without rebuilding containers:
+
+- each node: `DISABLED`, `MONITOR ONLY`, or `AUTO REPAIR`,
+- global monitoring on/off,
+- global automatic-repair worker on/off,
+- runtime `DRY RUN` / `LIVE` selection.
+
+Telegram controls can only make the process as permissive as the host allows. `LIVE` is refused unless
+server-side DRY_RUN, mutation, and emergency-stop gates already permit real infrastructure changes.
+Automatic repair only considers nodes explicitly set to `AUTO REPAIR`; `MONITOR ONLY` never triggers
+automatic replacement. Old-VPS deletion remains independently protected.
 
 ## Safety defaults
 
@@ -86,7 +100,7 @@ Apply all migrations before starting worker/bot processes:
 alembic upgrade head
 ```
 
-Current Alembic head: `20260919_0004`.
+Current Alembic head: `20260919_0005`.
 
 ## Quick installation
 

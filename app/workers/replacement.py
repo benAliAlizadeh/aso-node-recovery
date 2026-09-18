@@ -44,10 +44,13 @@ class ReplacementWorker:
         self.operational_settings = operational_settings
 
     async def run_cycle(self) -> ReplacementCycleResult:
-        if not self.settings.replacement_worker_enabled:
-            return ReplacementCycleResult(0, 0, 0, 0)
-        if self.operational_settings is not None and await self.operational_settings.is_paused():
-            return ReplacementCycleResult(0, 0, 0, 0)
+        if self.operational_settings is not None:
+            if await self.operational_settings.is_paused():
+                return ReplacementCycleResult(0, 0, 0, 0)
+            if not await self.operational_settings.replacement_enabled(
+                default=self.settings.replacement_worker_enabled
+            ):
+                return ReplacementCycleResult(0, 0, 0, 0)
 
         resumed = 0
         triggered = 0
@@ -70,11 +73,18 @@ class ReplacementWorker:
                 failed += 1
                 logger.exception("replacement_worker_resume_failed", extra={"job_id": str(job_id)})
 
-        if self.settings.dry_run or self.settings.replacement_emergency_stop:
+        effective_dry_run = (
+            await self.operational_settings.effective_dry_run(self.settings)
+            if self.operational_settings is not None
+            else self.settings.dry_run
+        )
+        # Automatic repair never fires in DRY_RUN. Operators can still trigger an explicit safe
+        # simulation, while monitoring continues to record real reachability state.
+        if effective_dry_run or self.settings.replacement_emergency_stop:
             return ReplacementCycleResult(resumed, triggered, deferred, failed)
 
         async with self.database.session() as session:
-            failed_nodes = await NodeRepository(session).list_failed(limit=100)
+            failed_nodes = await NodeRepository(session).list_auto_repair_failed(limit=100)
             jobs = ReplacementJobRepository(session)
             eligible_nodes = []
             for node in failed_nodes:

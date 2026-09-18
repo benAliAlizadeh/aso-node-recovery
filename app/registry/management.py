@@ -23,6 +23,7 @@ from app.deployment.types import SshConnectionSpec
 from app.models import (
     Node,
     NodeCredential,
+    NodeOperationMode,
     Provider,
     ProviderType,
     SecretReferenceBackend,
@@ -54,6 +55,7 @@ class NodeManagementSnapshot:
     master_node_id: str
     monitoring_host: str
     monitoring_port: int
+    operation_mode: NodeOperationMode
     provider_server_id: str
     provider_ipv4: str | None
     provider_region: str | None
@@ -541,6 +543,7 @@ class RegistryManagementService:
             master_node_id=node.master_node_id,
             monitoring_host=node.current_host,
             monitoring_port=node.current_port,
+            operation_mode=node.operation_mode or NodeOperationMode.MONITOR_ONLY,
             provider_server_id=current_vps.provider_server_id,
             provider_ipv4=current_vps.host,
             provider_region=current_vps.region,

@@ -26,6 +26,7 @@ from app.bot.formatters import (
     format_settings,
 )
 from app.bot.notifier import TelegramEventNotifier
+from app.bot.runtime_ui import TelegramRuntimeControlController
 from app.bot.registry_ui import TelegramRegistryController
 from app.control import ControlService, JobSnapshot
 from app.runtime import RuntimeContainer
@@ -44,6 +45,7 @@ class TelegramBotController:
         self.signer = CallbackSigner(self.settings.telegram_callback_secret)
         self.registry_ui = TelegramRegistryController(runtime, self.authorizer, self.signer)
         self.health_ui = TelegramApiHealthController(runtime, self.authorizer)
+        self.runtime_ui = TelegramRuntimeControlController(runtime, self.authorizer, self.signer)
 
     def register(self, application: Application) -> None:
         handlers = [
@@ -67,6 +69,7 @@ class TelegramBotController:
         application.add_handlers(handlers)
         self.registry_ui.register(application)
         self.health_ui.register(application)
+        self.runtime_ui.register(application)
 
     async def _authorized(self, update: Update) -> tuple[bool, int | None]:
         user_id = update.effective_user.id if update.effective_user else None
@@ -90,6 +93,7 @@ class TelegramBotController:
                 ],
                 [
                     InlineKeyboardButton("❤️ API Health", callback_data="m.health"),
+                    InlineKeyboardButton("⚙️ Controls", callback_data="m.controls"),
                 ],
                 [
                     InlineKeyboardButton("Jobs", callback_data="m.jobs"),
@@ -116,7 +120,7 @@ class TelegramBotController:
             + "\n\nUse the menu below or commands:\n"
             "/status /nodes /node <id|name> /check <id|name>\n"
             "/replace <id|name> /jobs /logs /providers /settings\n"
-            "/pause /resume",
+            "/controls /pause /resume",
             reply_markup=self._main_menu(),
         )
 
@@ -137,6 +141,12 @@ class TelegramBotController:
             return
         elif action == "health":
             await self.health_ui.render_all(query)
+            return
+        elif action == "controls":
+            user_id = update.effective_user.id if update.effective_user else None
+            if user_id is None:
+                return
+            await self.runtime_ui.render_controls(query, user_id)
             return
         elif action == "jobs":
             text = format_jobs(await self.control.list_jobs(limit=20))
@@ -462,6 +472,7 @@ def build_telegram_application(runtime: RuntimeContainer) -> Application:
                 BotCommand("jobs", "Recent replacement jobs"),
                 BotCommand("providers", "Provider status"),
                 BotCommand("apihealth", "Check external API health"),
+                BotCommand("controls", "Monitoring and auto-repair controls"),
                 BotCommand("logs", "Recent audit events"),
                 BotCommand("settings", "Effective safe settings"),
                 BotCommand("pause", "Pause new work"),

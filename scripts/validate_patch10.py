@@ -4,7 +4,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.5-postgres-auth-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() in {
+        "1.0.5-postgres-auth-hotfix",
+        "1.0.6-operational-onboarding",
+    }
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     assert "reconcile_postgres_password" in installer
     assert "postgres_password_matches_env" in installer

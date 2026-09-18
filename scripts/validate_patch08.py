@@ -10,6 +10,7 @@ def main() -> None:
         "1.0.3-installer-permissions-hotfix",
         "1.0.4-runtime-volume-capability-hotfix",
         "1.0.5-postgres-auth-hotfix",
+        "1.0.6-operational-onboarding",
     }
     compose = (ROOT / "docker-compose.prod.yml").read_text()
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()

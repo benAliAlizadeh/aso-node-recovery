@@ -31,9 +31,9 @@ def test_asoctl_stop_never_removes_named_volumes() -> None:
 
 
 def test_quick_install_release_version_is_consistent() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.5-postgres-auth-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() == "1.0.6-operational-onboarding"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert 'version = "1.0.5"' in pyproject
+    assert 'version = "1.0.6"' in pyproject
     assert (ROOT / "docs" / "QUICK_INSTALL.md").is_file()
     assert (ROOT / "install.sh").is_file()
     assert (ROOT / "asoctl").is_file()

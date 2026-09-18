@@ -321,16 +321,46 @@ wait_for_health() {
   [[ -n "$port" ]] || port=8000
   local url="http://127.0.0.1:${port}/health"
   local i
+  log "Waiting for API health: $url"
   for i in $(seq 1 30); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       log "API health check passed: $url"
       return 0
+    fi
+    if (( i % 5 == 0 )); then
+      echo "[ASO] Still waiting for API health (${i}/30)..."
     fi
     sleep 2
   done
   compose ps
   compose logs --tail=100 api || true
   die "API did not become healthy at $url"
+}
+
+verify_telegram_bot() {
+  [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]] || return 0
+  log "Verifying Telegram bot token with Telegram before startup."
+  compose --profile telegram run --rm --no-deps bot python scripts/telegram_probe.py
+}
+
+wait_for_bot() {
+  [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]] || return 0
+  local i cid state
+  log "Waiting for Telegram bot process to stay running."
+  for i in $(seq 1 15); do
+    cid="$(compose --profile telegram ps -q bot 2>/dev/null || true)"
+    if [[ -n "$cid" ]]; then
+      state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+      if [[ "$state" == "running" ]]; then
+        log "Telegram bot process is running."
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  compose --profile telegram ps bot || true
+  compose --profile telegram logs --tail=100 bot || true
+  die "Telegram bot did not remain running. Check the log above."
 }
 
 install_stack() {
@@ -356,13 +386,14 @@ install_stack() {
 
   log "Starting API and worker (worker scheduler remains disabled by default)."
   compose up -d api worker
+  wait_for_health
 
   if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
+    verify_telegram_bot
     log "Starting Telegram bot profile."
-    compose --profile telegram up -d bot
+    compose --profile telegram up -d --no-deps bot
+    wait_for_bot
   fi
-
-  wait_for_health
 }
 
 print_summary() {
@@ -385,14 +416,19 @@ SAFETY STATUS (intentionally locked by installer):
 Useful commands:
   ./asoctl status
   ./asoctl health
+  ./asoctl setup      # register existing provider/node/VPS safely
+  ./asoctl registry   # show onboarding readiness
+  ./asoctl telegram-check
   ./asoctl logs
   ./asoctl backup
   ./asoctl migrate
   ./asoctl validate
 
 Next operational work:
-  1. Add real provider/node/Master/SSH configuration.
-  2. Validate monitoring in DRY_RUN.
+  1. Run ./asoctl setup to register the existing provider/node/VPS inventory.
+  2. Test Telegram with /start, /nodes, /providers and /check <node-name>.
+  3. Optionally run ./asoctl monitoring-dry-run for automatic monitoring only.
+  4. Validate monitoring in DRY_RUN.
   3. Run a backup + isolated restore drill.
   4. Authorize a specific real E2E test before changing any real-mutation safety flags.
 

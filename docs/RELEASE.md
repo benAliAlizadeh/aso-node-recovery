@@ -30,3 +30,5 @@
 
 The quick installer only installs and safely boots the platform. It does not constitute authorization
 for real provider mutation, Master changes, database restore, or a production replacement test.
+
+- [ ] `scripts/validate_patch11.py` passes

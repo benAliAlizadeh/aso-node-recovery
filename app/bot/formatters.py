@@ -46,7 +46,7 @@ def format_dashboard(snapshot: DashboardSnapshot) -> str:
 
 def format_nodes(nodes: list[NodeSnapshot]) -> str:
     if not nodes:
-        return "No nodes are registered."
+        return "No nodes are registered. On the server run: ./asoctl setup"
     lines = ["Nodes:"]
     for node in nodes:
         lines.append(
@@ -164,7 +164,7 @@ def format_events(events: list[EventSnapshot]) -> str:
 
 def format_providers(providers: list[ProviderSnapshot]) -> str:
     if not providers:
-        return "No providers are configured."
+        return "No providers are configured. On the server run: ./asoctl setup"
     lines = ["Providers:"]
     for provider in providers:
         lines.append(

@@ -13,9 +13,13 @@ business logic remains in application services.
 
 All commands reject users outside the allow-list.
 
+## First use
+
+A fresh installation has an empty registry. On the server run `./asoctl setup` first, then use `/start`. The start screen includes an inline menu for the main read-only views.
+
 ## Commands
 
-- `/start`
+- `/start` / `/help`
 - `/status`
 - `/nodes`
 - `/node <uuid|name>`

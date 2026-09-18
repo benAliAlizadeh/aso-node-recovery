@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.0.5-postgres-auth-hotfix** — all seven planned phases are implemented, with a safety-first production quick installer.
+Current release: **1.0.6-operational-onboarding** — all seven planned phases are implemented, with a safety-first production quick installer.
 
 ## Core replacement invariant
 
@@ -65,7 +65,7 @@ cp .env.example .env
 pytest
 ruff check .
 ruff format --check .
-python scripts/validate_patch05.py
+python scripts/validate_patch11.py
 python -m compileall -q app tests scripts migrations
 alembic upgrade head --sql > migration.sql
 ```
@@ -102,10 +102,23 @@ secrets, starts PostgreSQL, applies migrations, runs the security review, starts
 stack, and verifies `/health`. It **always** leaves real infrastructure mutation and replacement workers
 disabled. See [Quick installation](docs/QUICK_INSTALL.md).
 
+## Operational onboarding
+
+A fresh installation intentionally starts with an empty provider/node registry. Register the existing infrastructure before expecting Telegram `/nodes` or `/providers` to show anything:
+
+```bash
+./asoctl setup
+./asoctl registry
+./asoctl telegram-check
+```
+
+Then open the bot and send `/start`. See [Operational onboarding](docs/ONBOARDING.md).
+
 ## Production
 
 See:
 
+- [Operational onboarding](docs/ONBOARDING.md)
 - [Production deployment](docs/PRODUCTION.md)
 - [Telegram control](docs/TELEGRAM.md)
 - [Backup/restore](docs/BACKUP_RESTORE.md)

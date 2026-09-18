@@ -31,7 +31,7 @@ worker enabled. Keep the replacement worker disabled during initial monitoring-o
 
 ```bash
 python scripts/security_review.py
-python scripts/validate_patch05.py
+python scripts/validate_patch11.py
 ```
 
 Exercise Telegram `/status`, `/nodes`, `/check`, pause/resume, audit logs, database backup, and a

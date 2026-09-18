@@ -4,7 +4,7 @@ import asyncio
 import logging
 from uuid import UUID
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -46,6 +46,7 @@ class TelegramBotController:
     def register(self, application: Application) -> None:
         handlers = [
             CommandHandler("start", self.start),
+            CommandHandler("help", self.start),
             CommandHandler("status", self.status),
             CommandHandler("nodes", self.nodes),
             CommandHandler("node", self.node),
@@ -57,6 +58,7 @@ class TelegramBotController:
             CommandHandler("providers", self.providers),
             CommandHandler("pause", self.pause),
             CommandHandler("resume", self.resume),
+            CallbackQueryHandler(self.menu_callback, pattern=r"^m\."),
             CallbackQueryHandler(self.callback, pattern=r"^(ck|rp|rc|ju|jr|ja|jc|pt|pe|pd)\."),
         ]
         application.add_handlers(handlers)
@@ -72,16 +74,66 @@ class TelegramBotController:
         logger.warning("telegram_access_denied", extra={"telegram_user_id": user_id})
         return False, user_id
 
+    @staticmethod
+    def _main_menu() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("Status", callback_data="m.status"),
+                    InlineKeyboardButton("Nodes", callback_data="m.nodes"),
+                    InlineKeyboardButton("Providers", callback_data="m.providers"),
+                ],
+                [
+                    InlineKeyboardButton("Jobs", callback_data="m.jobs"),
+                    InlineKeyboardButton("Logs", callback_data="m.logs"),
+                    InlineKeyboardButton("Settings", callback_data="m.settings"),
+                ],
+            ]
+        )
+
     async def start(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         ok, _ = await self._authorized(update)
         if not ok or not update.effective_message:
             return
+        providers = await self.control.list_providers()
+        nodes = await self.control.list_nodes(limit=1)
+        registry_note = (
+            f"Registry: {len(providers)} provider(s), {'1+' if nodes else '0'} node(s)."
+        )
+        if not providers or not nodes:
+            registry_note += "\nSetup required on server: ./asoctl setup"
         await update.effective_message.reply_text(
             "ASO Node Recovery\n\n"
+            + registry_note
+            + "\n\nUse the menu below or commands:\n"
             "/status /nodes /node <id|name> /check <id|name>\n"
             "/replace <id|name> /jobs /logs /providers /settings\n"
-            "/pause /resume"
+            "/pause /resume",
+            reply_markup=self._main_menu(),
         )
+
+    async def menu_callback(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+        ok, _ = await self._authorized(update)
+        query = update.callback_query
+        if not ok or query is None or not isinstance(query.data, str):
+            return
+        await query.answer()
+        action = query.data.split(".", 1)[1]
+        if action == "status":
+            text = format_dashboard(await self.control.dashboard())
+        elif action == "nodes":
+            text = format_nodes(await self.control.list_nodes(limit=50))
+        elif action == "providers":
+            text = format_providers(await self.control.list_providers())
+        elif action == "jobs":
+            text = format_jobs(await self.control.list_jobs(limit=20))
+        elif action == "logs":
+            text = format_events(await self.control.list_events(limit=15))
+        elif action == "settings":
+            text = format_settings(await self.control.settings_snapshot())
+        else:
+            text = "Unknown menu action."
+        await query.edit_message_text(text, reply_markup=self._main_menu())
 
     async def status(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         ok, _ = await self._authorized(update)
@@ -403,6 +455,20 @@ def build_telegram_application(runtime: RuntimeContainer) -> Application:
     )
 
     async def post_init(application: Application) -> None:
+        await application.bot.set_my_commands(
+            [
+                BotCommand("start", "Open ASO control menu"),
+                BotCommand("status", "System dashboard"),
+                BotCommand("nodes", "List registered nodes"),
+                BotCommand("check", "Check one node"),
+                BotCommand("jobs", "Recent replacement jobs"),
+                BotCommand("providers", "Provider status"),
+                BotCommand("logs", "Recent audit events"),
+                BotCommand("settings", "Effective safe settings"),
+                BotCommand("pause", "Pause new work"),
+                BotCommand("resume", "Resume new work"),
+            ]
+        )
         if notifier is not None:
             if application.job_queue is None:
                 raise RuntimeError("python-telegram-bot JobQueue extra is required")

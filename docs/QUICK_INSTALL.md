@@ -96,3 +96,16 @@ volume was initialized with an older password, the installer updates only the `a
 password through the container-local PostgreSQL socket and verifies the new credential. It never
 deletes or recreates the PostgreSQL volume to repair a password mismatch. Exported host database
 variables are also ignored during Compose calls so `sudo -E` cannot silently override `.env`.
+
+
+## First operational use
+
+After installation completes, register the existing infrastructure before using the bot:
+
+```bash
+./asoctl setup
+./asoctl registry
+./asoctl telegram-check
+```
+
+Then send `/start` to the authorized Telegram bot. Real mutation remains disabled.

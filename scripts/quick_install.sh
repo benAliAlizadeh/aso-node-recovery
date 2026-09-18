@@ -316,25 +316,58 @@ reconcile_postgres_password() {
 }
 
 wait_for_health() {
-  local port
+  local port url i cid state health
   port="$(get_env ASO_PORT)"
   [[ -n "$port" ]] || port=8000
-  local url="http://127.0.0.1:${port}/health"
-  local i
+  url="http://127.0.0.1:${port}/health"
+
   log "Waiting for API health: $url"
   for i in $(seq 1 30); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    cid="$(compose ps -q api 2>/dev/null || true)"
+    state="missing"
+    health="unknown"
+
+    if [[ -n "$cid" ]]; then
+      state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+      health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null || true)"
+
+      case "$state" in
+        exited|dead)
+          compose ps api || true
+          compose logs --tail=150 api || true
+          die "API container stopped before becoming healthy (state=$state)"
+          ;;
+        restarting)
+          compose ps api || true
+          compose logs --tail=150 api || true
+          die "API container is restarting; startup logs are shown above"
+          ;;
+      esac
+    fi
+
+    # Never let proxy environment variables or a stalled TCP connection block
+    # the installer. Docker's own healthcheck remains an independent signal.
+    if curl --noproxy '*' --connect-timeout 1 --max-time 2 -fsS "$url" >/dev/null 2>&1; then
       log "API health check passed: $url"
       return 0
     fi
+
+    if [[ "$health" == "healthy" ]]; then
+      compose ps api || true
+      warn "API container is healthy internally, but the host endpoint $url is not reachable."
+      compose port api 8000 || true
+      die "API is healthy inside Docker but the published host endpoint is unreachable; check ASO_PORT and port publishing"
+    fi
+
     if (( i % 5 == 0 )); then
-      echo "[ASO] Still waiting for API health (${i}/30)..."
+      echo "[ASO] Still waiting for API health (${i}/30) - container=${state:-unknown}, health=${health:-unknown}"
     fi
     sleep 2
   done
-  compose ps
-  compose logs --tail=100 api || true
-  die "API did not become healthy at $url"
+
+  compose ps api || true
+  compose logs --tail=150 api || true
+  die "API did not become healthy at $url after 60 seconds"
 }
 
 verify_telegram_bot() {

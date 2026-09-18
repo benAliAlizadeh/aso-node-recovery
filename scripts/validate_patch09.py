@@ -9,6 +9,7 @@ def main() -> None:
     assert (ROOT / "VERSION").read_text().strip() in {
         "1.0.5-postgres-auth-hotfix",
         "1.0.6-operational-onboarding",
+        "1.0.7-health-readiness-hotfix",
     }
     compose = (ROOT / "docker-compose.prod.yml").read_text()
     dockerfile = (ROOT / "docker" / "prod.Dockerfile").read_text()

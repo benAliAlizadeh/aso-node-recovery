@@ -7,6 +7,7 @@ def main() -> None:
     assert (ROOT / "VERSION").read_text().strip() in {
         "1.0.5-postgres-auth-hotfix",
         "1.0.6-operational-onboarding",
+        "1.0.7-health-readiness-hotfix",
     }
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     assert "reconcile_postgres_password" in installer

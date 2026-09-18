@@ -6,8 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.6-operational-onboarding"
-    assert 'version = "1.0.6"' in (ROOT / "pyproject.toml").read_text()
+    assert (ROOT / "VERSION").read_text().strip() in {
+        "1.0.6-operational-onboarding",
+        "1.0.7-health-readiness-hotfix",
+    }
+    assert 'version = "1.0.7"' in (ROOT / "pyproject.toml").read_text()
 
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     start = installer.index('log "Starting API and worker')

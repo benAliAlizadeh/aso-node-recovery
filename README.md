@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.0.6-operational-onboarding** — all seven planned phases are implemented, with a safety-first production quick installer.
+Current release: **1.0.7-health-readiness-hotfix** — all seven planned phases are implemented, with a safety-first production quick installer.
 
 ## Core replacement invariant
 

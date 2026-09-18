@@ -31,9 +31,9 @@ def test_asoctl_stop_never_removes_named_volumes() -> None:
 
 
 def test_quick_install_release_version_is_consistent() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.7-health-readiness-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() == "1.1.0-smart-onboarding"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert 'version = "1.0.7"' in pyproject
+    assert 'version = "1.1.0"' in pyproject
     assert (ROOT / "docs" / "QUICK_INSTALL.md").is_file()
     assert (ROOT / "install.sh").is_file()
     assert (ROOT / "asoctl").is_file()

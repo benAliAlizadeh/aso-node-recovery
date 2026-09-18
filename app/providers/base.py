@@ -12,6 +12,11 @@ class ProviderAdapter(ABC):
     """Provider-neutral infrastructure contract used by later orchestration."""
 
     @abstractmethod
+    async def probe_access(self) -> None:
+        """Validate read access without mutating provider infrastructure."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def create_server(self, request: CreateServerRequest) -> ProviderServer:
         raise NotImplementedError
 

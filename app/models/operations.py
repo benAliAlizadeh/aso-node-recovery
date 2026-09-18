@@ -128,6 +128,7 @@ class VpsInstance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     region: Mapped[str | None] = mapped_column(String(96), nullable=True)
     server_type: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    image: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     provider: Mapped[Provider] = relationship(back_populates="vps_instances")
     node: Mapped[Node] = relationship(back_populates="vps_instances")

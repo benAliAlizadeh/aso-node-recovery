@@ -22,6 +22,7 @@ def main() -> None:
             "1.0.5-postgres-auth-hotfix",
         "1.0.6-operational-onboarding",
         "1.0.7-health-readiness-hotfix",
+        "1.1.0-smart-onboarding",
         },
         "bad VERSION",
     )

@@ -32,8 +32,9 @@ def test_quick_installer_health_precedes_telegram_start_and_is_visible() -> None
 def test_asoctl_exposes_registry_and_safe_monitoring_workflow() -> None:
     source = (ROOT / "scripts" / "asoctl.sh").read_text(encoding="utf-8")
     assert "setup_registry" in source
-    assert "registry_cli.py add-provider" in source
-    assert "registry_cli.py add-node" in source
+    assert "registry_cli.py smart-add-provider" in source
+    assert "registry_cli.py smart-preview-node" in source
+    assert "registry_cli.py smart-add-node" in source
     assert "monitoring-dry-run" in source
     assert "set_env ASO_DRY_RUN true" in source
     assert "set_env ASO_REPLACEMENT_WORKER_ENABLED false" in source

@@ -37,6 +37,11 @@ class LinodeProvider(HttpProviderAdapterMixin, ProviderAdapter):
         if self._owns_client:
             await self._client.aclose()
 
+    async def probe_access(self) -> None:
+        await self._request_json(
+            self._client, "GET", "/linode/instances", params={"page_size": 25}
+        )
+
     async def create_server(self, request: CreateServerRequest) -> ProviderServer:
         request.validate()
         if not request.ssh_public_keys and request.root_password is None:
@@ -119,6 +124,7 @@ class LinodeProvider(HttpProviderAdapterMixin, ProviderAdapter):
             ipv4=str(ipv4[0]) if ipv4 else None,
             region=data.get("region"),
             server_type=data.get("type"),
+            image=str(data.get("image")) if data.get("image") else None,
             raw=data,
         )
 

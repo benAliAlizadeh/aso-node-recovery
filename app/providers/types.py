@@ -47,6 +47,7 @@ class ProviderServer:
     ipv4: str | None
     region: str | None
     server_type: str | None
+    image: str | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
 

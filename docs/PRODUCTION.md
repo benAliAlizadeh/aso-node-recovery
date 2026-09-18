@@ -15,7 +15,7 @@ docker compose -f docker-compose.prod.yml up -d postgres
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 ```
 
-Current migration head: `20260917_0003`.
+Current migration head: `20260919_0004`.
 
 ## 3. Start safely
 

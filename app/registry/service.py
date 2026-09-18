@@ -86,18 +86,19 @@ class RegistryOnboardingService:
         display_name: str,
         provider_type: ProviderType,
         credential_ref: str,
-        default_region: str,
-        default_server_type: str,
-        default_image: str,
+        default_region: str | None,
+        default_server_type: str | None,
+        default_image: str | None,
+        credential_backend: SecretReferenceBackend = SecretReferenceBackend.ENVIRONMENT,
     ) -> Provider:
         key = key.strip().lower()
         display_name = display_name.strip()
         credential_ref = credential_ref.strip()
-        default_region = default_region.strip()
-        default_server_type = default_server_type.strip()
-        default_image = default_image.strip()
-        if not all((key, display_name, credential_ref, default_region, default_server_type, default_image)):
-            raise ValueError("provider key/name/credential/region/server type/image are required")
+        default_region = (default_region or "").strip() or None
+        default_server_type = (default_server_type or "").strip() or None
+        default_image = (default_image or "").strip() or None
+        if not all((key, display_name, credential_ref)):
+            raise ValueError("provider key/name/credential are required")
 
         async with self.database.session() as session:
             repo = ProviderRepository(session)
@@ -108,11 +109,14 @@ class RegistryOnboardingService:
                         f"provider {key!r} already exists with type {existing.provider_type.value!r}"
                     )
                 existing.display_name = display_name
-                existing.credential_backend = SecretReferenceBackend.ENVIRONMENT
+                existing.credential_backend = credential_backend
                 existing.credential_ref = credential_ref
-                existing.default_region = default_region
-                existing.default_server_type = default_server_type
-                existing.default_image = default_image
+                if default_region is not None:
+                    existing.default_region = default_region
+                if default_server_type is not None:
+                    existing.default_server_type = default_server_type
+                if default_image is not None:
+                    existing.default_image = default_image
                 existing.is_active = True
                 await session.commit()
                 return existing
@@ -122,7 +126,7 @@ class RegistryOnboardingService:
                 display_name=display_name,
                 provider_type=provider_type,
                 is_active=True,
-                credential_backend=SecretReferenceBackend.ENVIRONMENT,
+                credential_backend=credential_backend,
                 credential_ref=credential_ref,
                 default_region=default_region,
                 default_server_type=default_server_type,
@@ -141,13 +145,15 @@ class RegistryOnboardingService:
         current_host: str,
         current_port: int,
         provider_server_id: str,
-        region: str | None,
-        server_type: str | None,
         ssh_username: str,
         ssh_port: int,
         ssh_auth_method: SshAuthMethod,
         ssh_secret_ref: str,
         ssh_public_key: str | None,
+        provider_host: str | None = None,
+        region: str | None = None,
+        server_type: str | None = None,
+        provider_image: str | None = None,
         panel_base_path: str | None = None,
         api_token_ref: str | None = None,
     ) -> Node:
@@ -156,10 +162,11 @@ class RegistryOnboardingService:
         master_node_id = master_node_id.strip()
         current_host = current_host.strip()
         provider_server_id = provider_server_id.strip()
+        provider_host = (provider_host or current_host).strip()
         ssh_username = ssh_username.strip()
         ssh_secret_ref = ssh_secret_ref.strip()
         if not all(
-            (name, provider_key, master_node_id, current_host, provider_server_id, ssh_username, ssh_secret_ref)
+            (name, provider_key, master_node_id, current_host, provider_server_id, provider_host, ssh_username, ssh_secret_ref)
         ):
             raise ValueError("node identity, provider server ID and SSH fields are required")
         if not 1 <= current_port <= 65535 or not 1 <= ssh_port <= 65535:
@@ -177,23 +184,55 @@ class RegistryOnboardingService:
             if provider is None:
                 raise ValueError(f"provider {provider_key!r} is not registered")
 
+            if (region or "").strip():
+                provider.default_region = str(region).strip()
+            if (server_type or "").strip():
+                provider.default_server_type = str(server_type).strip()
+            if (provider_image or "").strip():
+                provider.default_image = str(provider_image).strip()
+
             existing = await nodes.get_by_name(name)
             if existing is not None:
                 existing_current = await vps_instances.get_current_for_node(existing.id)
                 existing_credential = await credentials.get_for_node(existing.id)
-                same_identity = (
+                stable_identity = (
                     existing.provider_id == provider.id
                     and existing.master_node_id == master_node_id
-                    and existing.current_host == current_host
-                    and existing.current_port == current_port
                     and existing_current is not None
                     and existing_current.provider_server_id == provider_server_id
                     and existing_credential is not None
                 )
-                if same_identity:
+                if stable_identity:
+                    # Re-running smart onboarding is an idempotent metadata/credential refresh.
+                    # Stable provider/master/server IDs are the identity boundary; discovered host,
+                    # port, region, type and image may safely be refreshed from read-only APIs.
+                    existing.current_host = current_host
+                    existing.current_port = current_port
+                    existing_current.host = provider_host
+                    existing_current.region = (region or "").strip() or existing_current.region
+                    existing_current.server_type = (
+                        (server_type or "").strip() or existing_current.server_type
+                    )
+                    existing_current.image = (
+                        (provider_image or "").strip() or existing_current.image
+                    )
+                    existing_credential.ssh_username = ssh_username
+                    existing_credential.ssh_port = ssh_port
+                    existing_credential.ssh_auth_method = ssh_auth_method
+                    existing_credential.secret_backend = SecretReferenceBackend.FILE
+                    existing_credential.ssh_secret_ref = ssh_secret_ref
+                    existing_credential.ssh_public_key = (ssh_public_key or "").strip() or None
+                    existing_credential.panel_base_path = (
+                        (panel_base_path or "").strip() or None
+                    )
+                    if (api_token_ref or "").strip():
+                        existing_credential.api_token_ref = str(api_token_ref).strip()
+                        existing_credential.api_token_backend = SecretReferenceBackend.FILE
+                    await session.commit()
                     return existing
                 raise ValueError(
-                    f"node {name!r} already exists with different identity; refusing to overwrite it"
+                    f"node {name!r} already exists with different provider/master/server identity; "
+                    "refusing to overwrite it"
                 )
 
             duplicate_master = await session.scalar(
@@ -241,9 +280,10 @@ class RegistryOnboardingService:
                 provider_server_id=provider_server_id,
                 role=VpsInstanceRole.CURRENT,
                 state=VpsInstanceState.RUNNING,
-                host=current_host,
+                host=provider_host,
                 region=(region or "").strip() or provider.default_region,
                 server_type=(server_type or "").strip() or provider.default_server_type,
+                image=(provider_image or "").strip() or provider.default_image,
             )
             await vps_instances.add(current_vps)
             await session.commit()

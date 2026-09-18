@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 
 from app.deployment.types import ThreeXUiConfig
 
 
 class ThreeXUiNodeApiVerifier:
-    """Verify a newly installed panel using the current token-authenticated server status API."""
+    """Verify a 3X-UI node using the token-authenticated server status API."""
 
     def __init__(
         self,
@@ -22,18 +23,22 @@ class ThreeXUiNodeApiVerifier:
         self._client = client
 
     async def verify(self, config: ThreeXUiConfig) -> dict[str, Any]:
-        headers = {"Authorization": f"Bearer {config.api_token.get_secret_value()}"}
+        return await self.verify_access_url(config.access_url, config.api_token)
+
+    async def verify_access_url(
+        self,
+        access_url: str,
+        api_token: SecretStr,
+    ) -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {api_token.get_secret_value()}"}
+        url = f"{access_url.rstrip('/')}/panel/api/server/status"
         if self._client is not None:
-            response = await self._client.get(
-                f"{config.access_url}/panel/api/server/status", headers=headers
-            )
+            response = await self._client.get(url, headers=headers)
         else:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout_seconds), verify=self.verify_tls
             ) as client:
-                response = await client.get(
-                    f"{config.access_url}/panel/api/server/status", headers=headers
-                )
+                response = await client.get(url, headers=headers)
         response.raise_for_status()
         body = response.json()
         if not isinstance(body, dict) or body.get("success") is not True:

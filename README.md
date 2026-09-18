@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.0.7-health-readiness-hotfix** — all seven planned phases are implemented, with a safety-first production quick installer.
+Current release: **1.1.0-smart-onboarding** — all seven planned phases are implemented, with a safety-first production quick installer.
 
 ## Core replacement invariant
 
@@ -86,7 +86,7 @@ Apply all migrations before starting worker/bot processes:
 alembic upgrade head
 ```
 
-Current Alembic head: `20260917_0003`.
+Current Alembic head: `20260919_0004`.
 
 ## Quick installation
 
@@ -113,6 +113,18 @@ A fresh installation intentionally starts with an empty provider/node registry. 
 ```
 
 Then open the bot and send `/start`. See [Operational onboarding](docs/ONBOARDING.md).
+
+## Smart onboarding
+
+After installation, register existing infrastructure with read-only discovery:
+
+```bash
+./asoctl setup
+```
+
+Provider region/type/image and Node host/port/basePath are discovered from the provider API and
+Master 3X-UI rather than typed manually. Provider access, Master probe, and the current Node API
+token are validated before registry persistence. See [Smart onboarding](docs/SMART_ONBOARDING.md).
 
 ## Production
 

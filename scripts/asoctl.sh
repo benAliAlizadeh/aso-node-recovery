@@ -90,88 +90,142 @@ import_secret_value() {
 }
 
 setup_registry() {
-  echo "[ASO] Initial registry setup (non-destructive)."
-  echo "This records existing providers/nodes only. It does NOT create/delete VPSs or mutate Master."
+  echo "[ASO] Smart registry onboarding (read-only discovery first)."
+  echo "Provider/Master/Node APIs are validated before DB registration."
+  echo "No VPS is created/deleted and Master is never mutated by this setup flow."
   compose up -d postgres >/dev/null
   compose run --rm api alembic upgrade head >/dev/null
 
   if [[ -z "$(get_env ASO_MASTER_3XUI_BASE_URL)" ]]; then
-    if prompt_yes_no "Configure Master 3X-UI connection now?" "Y"; then
-      local master_url master_token master_username master_password
-      master_url="$(prompt_required 'Master 3X-UI base URL (https://...)')"
-      read -r -s -p "Master API token (preferred; Enter for username/password): " master_token
+    echo
+    echo "Master 3X-UI connection is required for automatic Node discovery."
+    local master_url master_token master_username master_password
+    master_url="$(prompt_required 'Master 3X-UI base URL (https://...)')"
+    read -r -s -p "Master API token (preferred; Enter for username/password): " master_token
+    printf '\n'
+    set_env ASO_MASTER_3XUI_BASE_URL "$master_url"
+    if [[ -n "$master_token" ]]; then
+      set_env ASO_MASTER_3XUI_API_TOKEN "$master_token"
+      set_env ASO_MASTER_3XUI_USERNAME ""
+      set_env ASO_MASTER_3XUI_PASSWORD ""
+    else
+      master_username="$(prompt_required 'Master username')"
+      read -r -s -p "Master password (hidden): " master_password
       printf '\n'
-      set_env ASO_MASTER_3XUI_BASE_URL "$master_url"
-      if [[ -n "$master_token" ]]; then
-        set_env ASO_MASTER_3XUI_API_TOKEN "$master_token"
-      else
-        master_username="$(prompt_required 'Master username')"
-        read -r -s -p "Master password (hidden): " master_password
-        printf '\n'
-        set_env ASO_MASTER_3XUI_USERNAME "$master_username"
-        set_env ASO_MASTER_3XUI_PASSWORD "$master_password"
-      fi
+      [[ -n "$master_password" ]] || { echo "Master password cannot be blank." >&2; return 1; }
+      set_env ASO_MASTER_3XUI_USERNAME "$master_username"
+      set_env ASO_MASTER_3XUI_PASSWORD "$master_password"
+      set_env ASO_MASTER_3XUI_API_TOKEN ""
     fi
+    unset master_token master_password
   fi
 
   echo
   compose run --rm api python scripts/registry_cli.py list
 
   while prompt_yes_no "Add or update a provider?" "Y"; do
-    local provider_type key display_name credential_ref token region server_type image
-    provider_type="$(prompt_default 'Provider type (hetzner/linode)' 'hetzner')"
+    local provider_type key display_name credential_ref credential_backend token env_token_key candidate_id
+    provider_type="$(prompt_default 'Provider type (hetzner/linode)' 'linode')"
     case "$provider_type" in
-      hetzner)
-        credential_ref="ASO_HETZNER_API_TOKEN"
-        ;;
-      linode)
-        credential_ref="ASO_LINODE_API_TOKEN"
-        ;;
-      *)
-        echo "Unsupported provider type: $provider_type" >&2
-        continue
-        ;;
+      hetzner) env_token_key="ASO_HETZNER_API_TOKEN" ;;
+      linode) env_token_key="ASO_LINODE_API_TOKEN" ;;
+      *) echo "Unsupported provider type: $provider_type" >&2; continue ;;
     esac
-    key="$(prompt_required 'Provider key (example: hetzner-main)')"
+
+    key="$(prompt_required 'Provider key (example: linode-main)')"
     display_name="$(prompt_default 'Display name' "$key")"
-    region="$(prompt_required 'Default provider region/location code')"
-    server_type="$(prompt_required 'Default server type/plan code')"
-    image="$(prompt_required 'Default image code')"
+    read -r -s -p "$provider_type API token (Enter = reuse configured $env_token_key): " token
+    printf '\n'
 
-    if [[ -z "$(get_env "$credential_ref")" ]]; then
-      read -r -s -p "$provider_type API token (stored in .env, hidden): " token
-      printf '\n'
-      [[ -n "$token" ]] || { echo "API token cannot be blank." >&2; continue; }
-      set_env "$credential_ref" "$token"
+    if [[ -n "$token" ]]; then
+      candidate_id="$(date +%s)-$$-$RANDOM"
+      credential_ref="$(import_secret_value "provider-${key}-candidate-${candidate_id}" api-token "$token")"
+      credential_backend="file"
+    elif [[ -n "$(get_env "$env_token_key")" ]]; then
+      credential_ref="$env_token_key"
+      credential_backend="environment"
+    else
+      echo "No provider API token supplied/configured; provider was not saved." >&2
+      continue
     fi
+    unset token
 
-    compose run --rm api python scripts/registry_cli.py add-provider \
+    echo "[ASO] Verifying read access to $provider_type before saving..."
+    if ! compose run --rm api python scripts/registry_cli.py smart-add-provider \
       --key "$key" \
       --display-name "$display_name" \
       --type "$provider_type" \
       --credential-ref "$credential_ref" \
-      --region "$region" \
-      --server-type "$server_type" \
-      --image "$image"
+      --credential-backend "$credential_backend"; then
+      echo "[ASO][FAIL] Provider validation failed. Nothing was registered in the DB." >&2
+      continue
+    fi
     echo
     prompt_yes_no "Add another provider?" "N" || break
   done
 
-  while prompt_yes_no "Register an existing node/VPS?" "Y"; do
-    local node_name provider_key master_id host port provider_server_id current_region current_server_type
-    local ssh_username ssh_port auth_method ssh_secret_ref ssh_public_key private_key_path public_key_path
-    local ssh_password panel_base_path current_api_token api_token_ref
+  while prompt_yes_no "Discover and register an existing Node/VPS?" "Y"; do
+    local provider_key provider_server_id master_id node_name current_api_token api_token_ref candidate_id
+    local ssh_username ssh_port auth_method ssh_secret_ref ssh_public_key private_key_path public_key_path ssh_password
+    local preview_output region_override server_type_override image_override
 
-    node_name="$(prompt_required 'Node name')"
     provider_key="$(prompt_required 'Provider key')"
+    provider_server_id="$(prompt_required 'Provider server/instance ID')"
     master_id="$(prompt_required 'Existing Master 3X-UI Node ID')"
-    host="$(prompt_required 'Current node IP/host')"
-    port="$(prompt_required 'Current node panel/API port')"
-    provider_server_id="$(prompt_required 'Current VPS provider server/instance ID')"
-    read -r -p "Current VPS region (Enter = provider default): " current_region
-    read -r -p "Current VPS server type (Enter = provider default): " current_server_type
 
-    ssh_username="$(prompt_default 'SSH username' 'root')"
+    api_token_ref=""
+    read -r -s -p "Current 3X-UI Node API token (hidden; required when Master says token is configured): " current_api_token
+    printf '\n'
+    if [[ -n "$current_api_token" ]]; then
+      candidate_id="$(date +%s)-$$-$RANDOM"
+      api_token_ref="$(import_secret_value "node-${provider_key}-${provider_server_id}-candidate-${candidate_id}" current-api-token "$current_api_token")"
+    fi
+    unset current_api_token
+
+    echo
+    echo "[ASO] Discovering VPS metadata from Provider and Node metadata from Master..."
+    preview_args=(
+      python scripts/registry_cli.py smart-preview-node
+      --provider-key "$provider_key"
+      --provider-server-id "$provider_server_id"
+      --master-node-id "$master_id"
+    )
+    [[ -z "$api_token_ref" ]] || preview_args+=(--api-token-ref "$api_token_ref")
+    region_override=""
+    server_type_override=""
+    image_override=""
+    if ! preview_output="$(compose run --rm api "${preview_args[@]}" 2>&1)"; then
+      printf '%s
+' "$preview_output" >&2
+      if [[ "$preview_output" == *"provider API could not discover required replacement metadata"* ]]         && prompt_yes_no "Provider could not expose all replacement metadata. Enter only the missing values manually?" "Y"; then
+        read -r -p "Region/location override (Enter = keep auto): " region_override
+        read -r -p "Server type/plan override (Enter = keep auto): " server_type_override
+        read -r -p "Image override (Enter = keep auto): " image_override
+        [[ -z "$region_override" ]] || preview_args+=(--region-override "$region_override")
+        [[ -z "$server_type_override" ]] || preview_args+=(--server-type-override "$server_type_override")
+        [[ -z "$image_override" ]] || preview_args+=(--image-override "$image_override")
+        if ! preview_output="$(compose run --rm api "${preview_args[@]}" 2>&1)"; then
+          printf '%s
+' "$preview_output" >&2
+          echo "[ASO][FAIL] Discovery/validation still failed. Node was not registered." >&2
+          continue
+        fi
+      else
+        echo "[ASO][FAIL] Discovery/validation failed. Node was not registered." >&2
+        continue
+      fi
+    fi
+    printf '%s
+' "$preview_output"
+
+    echo
+    if ! prompt_yes_no "The discovered Provider/Master/Node API data above is correct. Register it?" "Y"; then
+      echo "Node registration cancelled."
+      continue
+    fi
+
+    read -r -p "Local ASO node name (Enter = discovered Master node name): " node_name
+    ssh_username="$(prompt_default 'SSH username for replacement VPSs' 'root')"
     ssh_port="$(prompt_default 'SSH port' '22')"
     auth_method="$(prompt_default 'SSH auth (private_key/password)' 'private_key')"
     case "$auth_method" in
@@ -180,13 +234,15 @@ setup_registry() {
         public_key_path="$(prompt_default 'Path to matching SSH PUBLIC key' "${private_key_path}.pub")"
         [[ -r "$public_key_path" ]] || { echo "Cannot read public key: $public_key_path" >&2; continue; }
         ssh_public_key="$(tr -d '\r\n' < "$public_key_path")"
-        ssh_secret_ref="$(import_secret_file "node-$node_name" ssh-private-key "$private_key_path")"
+        candidate_id="$(date +%s)-$$-$RANDOM"
+        ssh_secret_ref="$(import_secret_file "node-${provider_key}-${provider_server_id}-candidate-${candidate_id}" ssh-private-key "$private_key_path")"
         ;;
       password)
-        read -r -s -p "SSH password (hidden): " ssh_password
+        read -r -s -p "SSH password for replacement VPSs (hidden): " ssh_password
         printf '\n'
         [[ -n "$ssh_password" ]] || { echo "SSH password cannot be blank." >&2; continue; }
-        ssh_secret_ref="$(import_secret_value "node-$node_name" ssh-password "$ssh_password")"
+        candidate_id="$(date +%s)-$$-$RANDOM"
+        ssh_secret_ref="$(import_secret_value "node-${provider_key}-${provider_server_id}-candidate-${candidate_id}" ssh-password "$ssh_password")"
         ssh_public_key=""
         unset ssh_password
         ;;
@@ -196,37 +252,28 @@ setup_registry() {
         ;;
     esac
 
-    read -r -p "Current node base path (optional, example /abc/): " panel_base_path
-    api_token_ref=""
-    if prompt_yes_no "Store the CURRENT node API token for safe Master rollback?" "Y"; then
-      read -r -s -p "Current node API token (hidden): " current_api_token
-      printf '\n'
-      if [[ -n "$current_api_token" ]]; then
-        api_token_ref="$(import_secret_value "node-$node_name" current-api-token "$current_api_token")"
-      fi
-      unset current_api_token
-    fi
-
     node_args=(
-      python scripts/registry_cli.py add-node
-      --name "$node_name"
+      python scripts/registry_cli.py smart-add-node
       --provider-key "$provider_key"
-      --master-node-id "$master_id"
-      --host "$host"
-      --port "$port"
       --provider-server-id "$provider_server_id"
+      --master-node-id "$master_id"
       --ssh-username "$ssh_username"
       --ssh-port "$ssh_port"
       --ssh-auth-method "$auth_method"
       --ssh-secret-ref "$ssh_secret_ref"
     )
-    [[ -z "$current_region" ]] || node_args+=(--region "$current_region")
-    [[ -z "$current_server_type" ]] || node_args+=(--server-type "$current_server_type")
+    [[ -z "$node_name" ]] || node_args+=(--name "$node_name")
     [[ -z "$ssh_public_key" ]] || node_args+=(--ssh-public-key "$ssh_public_key")
-    [[ -z "$panel_base_path" ]] || node_args+=(--panel-base-path "$panel_base_path")
     [[ -z "$api_token_ref" ]] || node_args+=(--api-token-ref "$api_token_ref")
+    [[ -z "$region_override" ]] || node_args+=(--region-override "$region_override")
+    [[ -z "$server_type_override" ]] || node_args+=(--server-type-override "$server_type_override")
+    [[ -z "$image_override" ]] || node_args+=(--image-override "$image_override")
 
-    compose run --rm api "${node_args[@]}"
+    echo "[ASO] Re-validating discovery immediately before DB commit..."
+    if ! compose run --rm api "${node_args[@]}"; then
+      echo "[ASO][FAIL] Final validation failed. Node was not registered." >&2
+      continue
+    fi
     echo
     prompt_yes_no "Register another node?" "N" || break
   done
@@ -236,22 +283,22 @@ setup_registry() {
   compose run --rm api python scripts/registry_cli.py list
   echo
   if compose run --rm api python scripts/registry_cli.py readiness; then
-    echo "[ASO] Registry onboarding is ready."
+    echo "[ASO] Smart onboarding is ready."
   else
-    echo "[ASO][WARN] Registry is still incomplete. Add the missing provider/node/VPS/credential records."
+    echo "[ASO][WARN] Registry is still incomplete. Run ./asoctl setup again to add missing records."
   fi
 
   echo
-  echo "Reloading application containers so .env changes are picked up."
+  echo "Reloading application containers so current .env settings are picked up."
   compose up -d --force-recreate api worker
   if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
     compose --profile telegram up -d --force-recreate --no-deps bot
   fi
   echo
-  echo "Next safe checks:"
+  echo "Safe next checks:"
   echo "  ./asoctl health"
   echo "  ./asoctl registry"
-  echo "  Telegram: /start, /nodes, /providers, /check <node-name>"
+  echo "  Telegram: /start, /nodes, /providers"
   echo "Automatic replacement remains disabled."
 }
 

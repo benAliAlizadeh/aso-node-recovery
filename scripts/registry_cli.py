@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 
 from pydantic import SecretStr
@@ -9,8 +10,8 @@ from pydantic import SecretStr
 from app.core.config import get_settings
 from app.core.secrets import RuntimeSecretStore
 from app.database import Database
-from app.models import ProviderType, SshAuthMethod
-from app.registry import RegistryOnboardingService
+from app.models import ProviderType, SecretReferenceBackend, SshAuthMethod
+from app.registry import RegistryOnboardingService, SmartRegistryOnboardingService
 
 
 def parser() -> argparse.ArgumentParser:
@@ -33,6 +34,19 @@ def parser() -> argparse.ArgumentParser:
     provider.add_argument("--server-type", required=True)
     provider.add_argument("--image", required=True)
 
+    smart_provider = sub.add_parser("smart-add-provider")
+    smart_provider.add_argument("--key", required=True)
+    smart_provider.add_argument("--display-name", required=True)
+    smart_provider.add_argument(
+        "--type", choices=[item.value for item in ProviderType], required=True
+    )
+    smart_provider.add_argument("--credential-ref", required=True)
+    smart_provider.add_argument(
+        "--credential-backend",
+        choices=[SecretReferenceBackend.FILE.value, SecretReferenceBackend.ENVIRONMENT.value],
+        default=SecretReferenceBackend.FILE.value,
+    )
+
     node = sub.add_parser("add-node")
     node.add_argument("--name", required=True)
     node.add_argument("--provider-key", required=True)
@@ -40,8 +54,10 @@ def parser() -> argparse.ArgumentParser:
     node.add_argument("--host", required=True)
     node.add_argument("--port", type=int, required=True)
     node.add_argument("--provider-server-id", required=True)
+    node.add_argument("--provider-host")
     node.add_argument("--region")
     node.add_argument("--server-type")
+    node.add_argument("--provider-image")
     node.add_argument("--ssh-username", default="root")
     node.add_argument("--ssh-port", type=int, default=22)
     node.add_argument("--ssh-auth-method", choices=[item.value for item in SshAuthMethod], required=True)
@@ -49,6 +65,25 @@ def parser() -> argparse.ArgumentParser:
     node.add_argument("--ssh-public-key")
     node.add_argument("--panel-base-path")
     node.add_argument("--api-token-ref")
+
+    for command in ("smart-preview-node", "smart-add-node"):
+        smart_node = sub.add_parser(command)
+        smart_node.add_argument("--provider-key", required=True)
+        smart_node.add_argument("--provider-server-id", required=True)
+        smart_node.add_argument("--master-node-id", type=int, required=True)
+        smart_node.add_argument("--api-token-ref")
+        smart_node.add_argument("--region-override")
+        smart_node.add_argument("--server-type-override")
+        smart_node.add_argument("--image-override")
+        if command == "smart-add-node":
+            smart_node.add_argument("--name")
+            smart_node.add_argument("--ssh-username", default="root")
+            smart_node.add_argument("--ssh-port", type=int, default=22)
+            smart_node.add_argument(
+                "--ssh-auth-method", choices=[item.value for item in SshAuthMethod], required=True
+            )
+            smart_node.add_argument("--ssh-secret-ref", required=True)
+            smart_node.add_argument("--ssh-public-key")
     return root
 
 
@@ -68,6 +103,7 @@ async def run(args: argparse.Namespace) -> int:
 
     database = Database.from_settings(settings)
     service = RegistryOnboardingService(database)
+    smart = SmartRegistryOnboardingService(database, settings)
     try:
         if args.command == "list":
             providers = await service.list_providers()
@@ -78,7 +114,8 @@ async def run(args: argparse.Namespace) -> int:
             for item in providers:
                 print(
                     f"  - {item.key}: {item.provider_type.value} "
-                    f"region={item.default_region or '-'} type={item.default_server_type or '-'}"
+                    f"region={item.default_region or '-'} type={item.default_server_type or '-'} "
+                    f"image={item.default_image or '-'}"
                 )
             print("Nodes:")
             if not nodes:
@@ -112,6 +149,20 @@ async def run(args: argparse.Namespace) -> int:
             print(f"Provider ready: {provider.key} ({provider.provider_type.value})")
             return 0
 
+        if args.command == "smart-add-provider":
+            provider = await smart.validate_and_register_provider(
+                key=args.key,
+                display_name=args.display_name,
+                provider_type=ProviderType(args.type),
+                credential_ref=args.credential_ref,
+                credential_backend=SecretReferenceBackend(args.credential_backend),
+            )
+            print(
+                f"Provider API verified and registered: {provider.key} "
+                f"({provider.provider_type.value})"
+            )
+            return 0
+
         if args.command == "add-node":
             node = await service.register_node(
                 name=args.name,
@@ -120,8 +171,10 @@ async def run(args: argparse.Namespace) -> int:
                 current_host=args.host,
                 current_port=args.port,
                 provider_server_id=args.provider_server_id,
+                provider_host=args.provider_host,
                 region=args.region,
                 server_type=args.server_type,
+                provider_image=args.provider_image,
                 ssh_username=args.ssh_username,
                 ssh_port=args.ssh_port,
                 ssh_auth_method=SshAuthMethod(args.ssh_auth_method),
@@ -131,6 +184,39 @@ async def run(args: argparse.Namespace) -> int:
                 api_token_ref=args.api_token_ref,
             )
             print(f"Node ready: {node.name} ({node.id})")
+            return 0
+
+        if args.command == "smart-preview-node":
+            discovered = await smart.discover_node(
+                provider_key=args.provider_key,
+                provider_server_id=args.provider_server_id,
+                master_node_id=args.master_node_id,
+                api_token_ref=args.api_token_ref,
+                region_override=args.region_override,
+                server_type_override=args.server_type_override,
+                image_override=args.image_override,
+            )
+            print(json.dumps(discovered.safe_summary(), indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "smart-add-node":
+            node, discovered = await smart.validate_and_register_node(
+                name=args.name,
+                provider_key=args.provider_key,
+                provider_server_id=args.provider_server_id,
+                master_node_id=args.master_node_id,
+                ssh_username=args.ssh_username,
+                ssh_port=args.ssh_port,
+                ssh_auth_method=SshAuthMethod(args.ssh_auth_method),
+                ssh_secret_ref=args.ssh_secret_ref,
+                ssh_public_key=args.ssh_public_key,
+                api_token_ref=args.api_token_ref,
+                region_override=args.region_override,
+                server_type_override=args.server_type_override,
+                image_override=args.image_override,
+            )
+            print(json.dumps(discovered.safe_summary(), indent=2, sort_keys=True))
+            print(f"Node verified and registered: {node.name} ({node.id})")
             return 0
     finally:
         await database.dispose()

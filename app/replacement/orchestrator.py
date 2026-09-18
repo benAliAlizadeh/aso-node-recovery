@@ -318,7 +318,14 @@ class ReplacementOrchestrator:
                     return
             active_temporary = await vps_repo.count_active_replacements()
             active_jobs = await ReplacementJobRepository(session).count_active()
-            request = self._build_create_request(job, node, provider, credential)
+            old_vps = (
+                await vps_repo.get(job.old_vps_instance_id)
+                if job.old_vps_instance_id is not None
+                else None
+            )
+            if old_vps is None:
+                raise ReplacementConfigurationError("replacement job old VPS template is missing")
+            request = self._build_create_request(job, node, provider, credential, old_vps)
             requested_at = job.provisioning_requested_at
             await session.commit()
 
@@ -371,12 +378,16 @@ class ReplacementOrchestrator:
                     state=self._map_vps_state(provider_server.status),
                     host=provider_server.ipv4,
                     region=provider_server.region,
-                    server_type=provider_server.server_type,
+                    server_type=provider_server.server_type or request.server_type,
+                    image=provider_server.image or request.image,
                 )
                 await vps_repo.add(instance)
             else:
                 instance.state = self._map_vps_state(provider_server.status)
                 instance.host = provider_server.ipv4 or instance.host
+                instance.region = provider_server.region or instance.region
+                instance.server_type = provider_server.server_type or instance.server_type
+                instance.image = provider_server.image or instance.image or request.image
             job.new_vps_instance_id = instance.id
             self.state_machine.transition(job, ReplacementCheckpoint.PROVISIONED)
             if created_record:
@@ -418,6 +429,7 @@ class ReplacementOrchestrator:
             new_vps.state = VpsInstanceState.RUNNING
             new_vps.region = server.region or new_vps.region
             new_vps.server_type = server.server_type or new_vps.server_type
+            new_vps.image = server.image or new_vps.image
             self.state_machine.transition(job, ReplacementCheckpoint.CHECKING_IP)
             await self._add_event(
                 session,
@@ -1069,19 +1081,23 @@ class ReplacementOrchestrator:
         node: Node,
         provider: Provider,
         credential: NodeCredential,
+        old_vps: VpsInstance,
     ) -> CreateServerRequest:
+        region = old_vps.region or provider.default_region
+        server_type = old_vps.server_type or provider.default_server_type
+        image = old_vps.image or provider.default_image
         missing = [
             key
             for key, value in (
-                ("default_region", provider.default_region),
-                ("default_server_type", provider.default_server_type),
-                ("default_image", provider.default_image),
+                ("region", region),
+                ("server_type", server_type),
+                ("image", image),
             )
             if not value
         ]
         if missing:
             raise ReplacementConfigurationError(
-                "provider replacement template is incomplete: " + ", ".join(missing)
+                "node replacement template is incomplete: " + ", ".join(missing)
             )
 
         ssh_keys: tuple[str, ...] = ()
@@ -1106,9 +1122,9 @@ class ReplacementOrchestrator:
 
         return CreateServerRequest(
             name=self._replacement_server_name(node, job),
-            region=str(provider.default_region),
-            server_type=str(provider.default_server_type),
-            image=str(provider.default_image),
+            region=str(region),
+            server_type=str(server_type),
+            image=str(image),
             ssh_public_keys=ssh_keys,
             root_password=root_password,
             labels={

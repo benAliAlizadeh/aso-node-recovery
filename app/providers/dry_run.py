@@ -19,6 +19,9 @@ class DryRunProvider(ProviderAdapter):
         self.provider_type = provider_type
         self._servers: dict[str, ProviderServer] = {}
 
+    async def probe_access(self) -> None:
+        return None
+
     async def create_server(self, request: CreateServerRequest) -> ProviderServer:
         request.validate()
         digest = hashlib.sha256(
@@ -33,6 +36,7 @@ class DryRunProvider(ProviderAdapter):
             ipv4=f"203.0.113.{octet}",
             region=request.region,
             server_type=request.server_type,
+            image=request.image,
         )
         self._servers[server_id] = server
         return server
@@ -60,6 +64,7 @@ class DryRunProvider(ProviderAdapter):
             ipv4=server.ipv4,
             region=server.region,
             server_type=server.server_type,
+            image=server.image,
         )
 
     async def reboot_server(self, provider_server_id: str) -> None:

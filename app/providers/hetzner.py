@@ -36,6 +36,11 @@ class HetznerProvider(HttpProviderAdapterMixin, ProviderAdapter):
         if self._owns_client:
             await self._client.aclose()
 
+    async def probe_access(self) -> None:
+        await self._request_json(
+            self._client, "GET", "/servers", params={"page": 1, "per_page": 1}
+        )
+
     async def create_server(self, request: CreateServerRequest) -> ProviderServer:
         request.validate()
         payload: dict[str, Any] = {
@@ -90,6 +95,12 @@ class HetznerProvider(HttpProviderAdapterMixin, ProviderAdapter):
         ipv4_data = public_net.get("ipv4") or {}
         server_type = data.get("server_type") or {}
         location = data.get("location") or {}
+        image = data.get("image") or {}
+        image_ref = None
+        if isinstance(image, dict):
+            image_ref = str(image.get("id") or image.get("name") or "") or None
+        elif image:
+            image_ref = str(image)
         return ProviderServer(
             provider_server_id=str(server_id),
             name=str(data.get("name") or server_id),
@@ -97,6 +108,7 @@ class HetznerProvider(HttpProviderAdapterMixin, ProviderAdapter):
             ipv4=ipv4_data.get("ip"),
             region=location.get("name"),
             server_type=server_type.get("name"),
+            image=image_ref,
             raw=data,
         )
 

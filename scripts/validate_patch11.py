@@ -9,8 +9,9 @@ def main() -> None:
     assert (ROOT / "VERSION").read_text().strip() in {
         "1.0.6-operational-onboarding",
         "1.0.7-health-readiness-hotfix",
+        "1.1.0-smart-onboarding",
     }
-    assert 'version = "1.0.7"' in (ROOT / "pyproject.toml").read_text()
+    assert 'version = "1.1.0"' in (ROOT / "pyproject.toml").read_text()
 
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     start = installer.index('log "Starting API and worker')
@@ -24,8 +25,6 @@ def main() -> None:
     asoctl = (ROOT / "scripts" / "asoctl.sh").read_text()
     for token in (
         "setup_registry",
-        "registry_cli.py add-provider",
-        "registry_cli.py add-node",
         "telegram-check",
         "monitoring-dry-run",
         "set_env ASO_DRY_RUN true",
@@ -33,6 +32,14 @@ def main() -> None:
         "set_env ASO_REPLACEMENT_WORKER_ENABLED false",
     ):
         assert token in asoctl
+    assert (
+        "registry_cli.py add-provider" in asoctl
+        or "registry_cli.py smart-add-provider" in asoctl
+    )
+    assert (
+        "registry_cli.py add-node" in asoctl
+        or "registry_cli.py smart-add-node" in asoctl
+    )
 
     registry = (ROOT / "app" / "registry" / "service.py").read_text()
     assert "never calls provider APIs" in registry

@@ -121,3 +121,6 @@ def test_phase6_registry_contains_durable_replacement_and_secret_reference_field
     assert "default_region" in providers
     assert "default_server_type" in providers
     assert "default_image" in providers
+
+    vps = metadata.tables["vps_instances"].c
+    assert "image" in vps

@@ -13,4 +13,4 @@ def test_health_wait_is_bounded_and_proxy_safe() -> None:
 
 
 def test_release_version() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.0.7-health-readiness-hotfix"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() in {"1.0.7-health-readiness-hotfix", "1.1.0-smart-onboarding"}

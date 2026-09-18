@@ -10,6 +10,7 @@ def main() -> None:
         "1.0.7-health-readiness-hotfix",
         "1.1.0-smart-onboarding",
         "1.2.0-telegram-registry-ui",
+        "1.3.0-api-health-center",
     }
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     assert "reconcile_postgres_password" in installer

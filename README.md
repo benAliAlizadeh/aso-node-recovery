@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.2.0-telegram-registry-ui** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
+Current release: **1.3.0-api-health-center** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
 
 ## Core replacement invariant
 
@@ -141,6 +141,7 @@ See:
 - [Operational onboarding](docs/ONBOARDING.md)
 - [Production deployment](docs/PRODUCTION.md)
 - [Telegram control](docs/TELEGRAM.md)
+- [API health diagnostics](docs/API_HEALTH.md)
 - [Backup/restore](docs/BACKUP_RESTORE.md)
 - [Security controls](docs/SECURITY.md)
 - [Release checklist](docs/RELEASE.md)

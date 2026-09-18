@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     telegram_poll_timeout_seconds: int = Field(default=30, ge=1, le=60)
     telegram_progress_interval_seconds: float = Field(default=2.0, ge=0.5, le=30.0)
     telegram_notification_interval_seconds: float = Field(default=10.0, ge=1.0, le=300.0)
+    api_health_timeout_seconds: float = Field(default=12.0, ge=1.0, le=60.0)
+    api_health_max_concurrency: int = Field(default=8, ge=1, le=32)
     hetzner_api_token: SecretStr | None = None
     linode_api_token: SecretStr | None = None
     master_3xui_base_url: str | None = None

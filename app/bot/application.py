@@ -16,6 +16,7 @@ from telegram.ext import (
 
 from app.bot.auth import TelegramAuthorizer
 from app.bot.callbacks import CallbackSigner, InvalidCallbackData
+from app.bot.health_ui import TelegramApiHealthController
 from app.bot.formatters import (
     format_dashboard,
     format_events,
@@ -42,6 +43,7 @@ class TelegramBotController:
             raise ValueError("Telegram callback secret is required")
         self.signer = CallbackSigner(self.settings.telegram_callback_secret)
         self.registry_ui = TelegramRegistryController(runtime, self.authorizer, self.signer)
+        self.health_ui = TelegramApiHealthController(runtime, self.authorizer)
 
     def register(self, application: Application) -> None:
         handlers = [
@@ -56,6 +58,7 @@ class TelegramBotController:
             CommandHandler("logs", self.logs),
             CommandHandler("settings", self.settings_command),
             CommandHandler("providers", self.providers),
+            CommandHandler("apihealth", self.api_health),
             CommandHandler("pause", self.pause),
             CommandHandler("resume", self.resume),
             CallbackQueryHandler(self.menu_callback, pattern=r"^m\."),
@@ -63,6 +66,7 @@ class TelegramBotController:
         ]
         application.add_handlers(handlers)
         self.registry_ui.register(application)
+        self.health_ui.register(application)
 
     async def _authorized(self, update: Update) -> tuple[bool, int | None]:
         user_id = update.effective_user.id if update.effective_user else None
@@ -83,6 +87,9 @@ class TelegramBotController:
                     InlineKeyboardButton("Status", callback_data="m.status"),
                     InlineKeyboardButton("Nodes", callback_data="m.nodes"),
                     InlineKeyboardButton("Providers", callback_data="m.providers"),
+                ],
+                [
+                    InlineKeyboardButton("❤️ API Health", callback_data="m.health"),
                 ],
                 [
                     InlineKeyboardButton("Jobs", callback_data="m.jobs"),
@@ -127,6 +134,9 @@ class TelegramBotController:
             return
         elif action == "providers":
             await self.registry_ui.render_providers(query)
+            return
+        elif action == "health":
+            await self.health_ui.render_all(query)
             return
         elif action == "jobs":
             text = format_jobs(await self.control.list_jobs(limit=20))
@@ -238,6 +248,12 @@ class TelegramBotController:
             await update.effective_message.reply_text(
                 format_settings(await self.control.settings_snapshot())
             )
+
+    async def api_health(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+        ok, _ = await self._authorized(update)
+        if not ok or not update.effective_message:
+            return
+        await self.health_ui.render_all(update.effective_message)
 
     async def providers(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         ok, _ = await self._authorized(update)
@@ -445,6 +461,7 @@ def build_telegram_application(runtime: RuntimeContainer) -> Application:
                 BotCommand("check", "Check one node"),
                 BotCommand("jobs", "Recent replacement jobs"),
                 BotCommand("providers", "Provider status"),
+                BotCommand("apihealth", "Check external API health"),
                 BotCommand("logs", "Recent audit events"),
                 BotCommand("settings", "Effective safe settings"),
                 BotCommand("pause", "Pause new work"),

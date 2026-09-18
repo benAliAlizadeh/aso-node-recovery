@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, replace
@@ -497,10 +498,29 @@ class ReplacementOrchestrator:
             and new_vps.state is not VpsInstanceState.DELETED
         ):
             adapter = self.provider_manager.get(provider)
+            async with self.database.session() as session:
+                job = await self._require_job(session, job_id)
+                node = await self._require_node(session, job.node_id)
+                expected_name = self._replacement_server_name(node, job)
             try:
-                await self.provisioning.delete_temporary(adapter, new_vps.provider_server_id)
+                provider_temp = await adapter.get_server(new_vps.provider_server_id)
             except ProviderNotFoundError:
-                pass
+                provider_temp = None
+            if provider_temp is not None:
+                if provider_temp.provider_server_id != new_vps.provider_server_id:
+                    raise SafetyViolationError(
+                        "temporary VPS cleanup denied; provider identity mismatch"
+                    )
+                if provider_temp.name != expected_name:
+                    raise SafetyViolationError(
+                        "temporary VPS cleanup denied; provider server name does not match "
+                        "the deterministic replacement identity"
+                    )
+                if new_vps.host and provider_temp.ipv4 != new_vps.host:
+                    raise SafetyViolationError(
+                        "temporary VPS cleanup denied; provider IP does not match registry identity"
+                    )
+                await self.provisioning.delete_temporary(adapter, new_vps.provider_server_id)
 
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)
@@ -812,6 +832,11 @@ class ReplacementOrchestrator:
                 old_vps = await VpsInstanceRepository(session).get(job.old_vps_instance_id)
                 if old_vps is None:
                     raise SafetyViolationError("old VPS registry row is missing")
+                if not self.settings.allow_old_vps_deletion:
+                    raise ReplacementDeferredError(
+                        "old VPS deletion is independently disabled; replacement is verified and "
+                        "waiting at cleanup until an operator explicitly enables deletion"
+                    )
                 self.old_vps_guard.assert_can_delete(
                     job, deployment=deployment, new_vps=new_vps, old_vps=old_vps
                 )
@@ -842,10 +867,25 @@ class ReplacementOrchestrator:
             return
 
         try:
-            await adapter.delete_server(old_server_id)
+            provider_old = await adapter.get_server(old_server_id)
         except ProviderNotFoundError:
-            # Crash after successful provider delete but before DB commit is safely resumable.
-            pass
+            # Crash after a previously successful provider delete but before the DB commit is resumable.
+            provider_old = None
+
+        if provider_old is not None:
+            if provider_old.provider_server_id != old_server_id:
+                raise SafetyViolationError("provider returned a different old VPS identity")
+            try:
+                registered_ip = str(ipaddress.ip_address(old_vps.host or ""))
+            except ValueError as exc:
+                raise SafetyViolationError(
+                    "old VPS deletion denied; registry host must be a literal public IP"
+                ) from exc
+            if provider_old.ipv4 != registered_ip:
+                raise SafetyViolationError(
+                    "old VPS deletion denied; provider IP does not match registry identity"
+                )
+            await adapter.delete_server(old_server_id)
 
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)

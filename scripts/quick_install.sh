@@ -26,6 +26,7 @@ Options:
 The installer NEVER enables real VPS/Master mutations. It always leaves:
   ASO_DRY_RUN=true
   ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=false
+  ASO_ALLOW_OLD_VPS_DELETION=false
   ASO_REPLACEMENT_WORKER_ENABLED=false
   ASO_WORKER_SCHEDULER_ENABLED=false
 HELP
@@ -193,10 +194,12 @@ configure_env() {
   # Hard safety defaults. The quick installer intentionally has no switch that turns these on.
   set_env ASO_DRY_RUN true
   set_env ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION false
+  set_env ASO_ALLOW_OLD_VPS_DELETION false
+  set_env ASO_OLD_VPS_DELETE_CONFIRMATION ""
   set_env ASO_REPLACEMENT_WORKER_ENABLED false
   set_env ASO_WORKER_SCHEDULER_ENABLED false
   set_env ASO_MONITORING_SCHEDULER_ENABLED false
-  set_env ASO_REPLACEMENT_EMERGENCY_STOP false
+  set_env ASO_REPLACEMENT_EMERGENCY_STOP true
   set_env ASO_ALLOW_DATABASE_RESTORE false
 
   if prompt_yes_no "Configure Telegram bot now?"; then
@@ -304,6 +307,7 @@ Config:  $ENV_FILE
 SAFETY STATUS (intentionally locked by installer):
   ASO_DRY_RUN=true
   ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=false
+  ASO_ALLOW_OLD_VPS_DELETION=false
   ASO_REPLACEMENT_WORKER_ENABLED=false
   ASO_WORKER_SCHEDULER_ENABLED=false
   ASO_ALLOW_DATABASE_RESTORE=false

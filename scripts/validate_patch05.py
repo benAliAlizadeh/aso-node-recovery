@@ -16,7 +16,7 @@ def main() -> None:
     from app.models import EventType
 
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version in {"1.0.0-production-release", "1.0.1-quick-installer"}
+    assert version in {"1.0.0-production-release", "1.0.1-quick-installer", "1.0.2-safety-hardening"}
 
     required = [
         "app/control/service.py",

@@ -82,9 +82,12 @@ of these persisted conditions are present:
 - master verification timestamp exists;
 - final reachability verification timestamp exists.
 
-Only after the guard passes does the orchestrator call the old VPS provider adapter. A provider 404
-at this exact checkpoint is treated as idempotent crash recovery (for example, crash after the cloud
-deleted the server but before the database commit).
+Only after the guard passes does the orchestrator call the old VPS provider adapter. In the safety-hardened
+release, cleanup also requires `ASO_ALLOW_OLD_VPS_DELETION=true` plus the exact confirmation phrase
+`DELETE_ONLY_VERIFIED_OLD_VPS`. Immediately before deletion, ASO reads the provider object again and
+requires its provider ID and public IPv4 to match the persisted old-VPS registry identity. A mismatch
+refuses deletion. A provider 404 at this exact checkpoint is treated as idempotent crash recovery (for
+example, crash after the cloud deleted the server but before the database commit).
 
 ## Reachability ambiguity
 

@@ -32,7 +32,7 @@ def test_check_host_quorum_cannot_exceed_selected_nodes() -> None:
 def test_replacement_worker_and_emergency_controls_are_safe_by_default() -> None:
     settings = Settings(_env_file=None)
     assert settings.replacement_worker_enabled is False
-    assert settings.replacement_emergency_stop is False
+    assert settings.replacement_emergency_stop is True
     assert settings.replacement_job_lease_seconds >= settings.provisioning_timeout_seconds
 
 
@@ -74,3 +74,20 @@ def test_production_refuses_disabled_transport_verification() -> None:
         Settings(_env_file=None, environment="production", ssh_verify_host_key=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, environment="production", master_3xui_verify_tls=False)
+
+
+def test_old_vps_delete_requires_three_independent_real_mutation_gates() -> None:
+    import pytest
+    with pytest.raises(ValueError, match="old VPS deletion cannot be enabled"):
+        Settings(allow_old_vps_deletion=True)
+    with pytest.raises(ValueError, match="ALLOW_REAL_INFRASTRUCTURE_MUTATION"):
+        Settings(dry_run=False, allow_old_vps_deletion=True, old_vps_delete_confirmation="DELETE_ONLY_VERIFIED_OLD_VPS")
+    with pytest.raises(ValueError, match="exact confirmation phrase"):
+        Settings(dry_run=False, allow_real_infrastructure_mutation=True, allow_old_vps_deletion=True)
+    settings = Settings(
+        dry_run=False,
+        allow_real_infrastructure_mutation=True,
+        allow_old_vps_deletion=True,
+        old_vps_delete_confirmation="DELETE_ONLY_VERIFIED_OLD_VPS",
+    )
+    assert settings.allow_old_vps_deletion is True

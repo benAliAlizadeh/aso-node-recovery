@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # production configuration changes this value.
     dry_run: bool = True
     allow_real_infrastructure_mutation: bool = False
+    # Independent kill switch for the only destructive action against the current/old VPS.
+    allow_old_vps_deletion: bool = False
+    old_vps_delete_confirmation: str = ""
     max_replacement_attempts: int = Field(default=5, ge=1, le=50)
     max_temporary_servers: int = Field(default=3, ge=1, le=100)
     max_concurrent_replacements: int = Field(default=2, ge=1, le=100)
@@ -78,7 +81,7 @@ class Settings(BaseSettings):
     worker_scheduler_enabled: bool = False
     replacement_ip_check_port: int = Field(default=22, ge=1, le=65535)
     replacement_job_lease_seconds: int = Field(default=1800, ge=30, le=3600)
-    replacement_emergency_stop: bool = False
+    replacement_emergency_stop: bool = True
     runtime_secret_dir: str = ".runtime-secrets"
 
     # Backup/restore. Restore remains independently disabled by default because it is destructive.
@@ -112,6 +115,19 @@ class Settings(BaseSettings):
                 )
             if len(self.telegram_callback_secret.get_secret_value()) < 32:
                 raise ValueError("telegram_callback_secret must be at least 32 characters")
+
+        if self.allow_old_vps_deletion:
+            if self.dry_run:
+                raise ValueError("old VPS deletion cannot be enabled while DRY_RUN=true")
+            if not self.allow_real_infrastructure_mutation:
+                raise ValueError(
+                    "old VPS deletion requires ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=true"
+                )
+            if self.old_vps_delete_confirmation != "DELETE_ONLY_VERIFIED_OLD_VPS":
+                raise ValueError(
+                    "old VPS deletion requires exact confirmation phrase "
+                    "DELETE_ONLY_VERIFIED_OLD_VPS"
+                )
 
         if self.environment == "production":
             if not self.ssh_verify_host_key:

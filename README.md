@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.0.1-quick-installer** — all seven planned phases are implemented, with a safety-first production quick installer.
+Current release: **1.0.2-safety-hardening** — all seven planned phases are implemented, with a safety-first production quick installer.
 
 ## Core replacement invariant
 
@@ -44,6 +44,8 @@ Only then may the old VPS be deleted.
 ```env
 ASO_DRY_RUN=true
 ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=false
+ASO_ALLOW_OLD_VPS_DELETION=false
+ASO_REPLACEMENT_EMERGENCY_STOP=true
 ASO_REPLACEMENT_WORKER_ENABLED=false
 ASO_WORKER_SCHEDULER_ENABLED=false
 ASO_TELEGRAM_BOT_ENABLED=false

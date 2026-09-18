@@ -20,4 +20,4 @@ def test_health_endpoint_reports_safe_defaults() -> None:
     assert body["service"] == "aso-node-recovery"
     assert body["environment"] == "test"
     assert body["dry_run"] is True
-    assert body["version"] == "1.0.1-quick-installer"
+    assert body["version"] == "1.0.2-safety-hardening"

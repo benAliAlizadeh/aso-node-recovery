@@ -44,7 +44,7 @@ def main() -> int:
     assert settings.dry_run is True
     assert settings.allow_real_infrastructure_mutation is False
     assert settings.replacement_worker_enabled is False
-    assert settings.replacement_emergency_stop is False
+    assert settings.replacement_emergency_stop is True
     assert settings.replacement_job_lease_seconds >= settings.provisioning_timeout_seconds
 
     jobs = metadata.tables["replacement_jobs"].c

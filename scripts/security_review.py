@@ -48,6 +48,8 @@ def main() -> None:
         "[INFO] ALLOW_REAL_INFRASTRUCTURE_MUTATION="
         f"{settings.allow_real_infrastructure_mutation}"
     )
+    print(f"[INFO] ALLOW_OLD_VPS_DELETION={settings.allow_old_vps_deletion}")
+    print(f"[INFO] REPLACEMENT_EMERGENCY_STOP={settings.replacement_emergency_stop}")
     if failed:
         raise SystemExit("Security review failed: " + ", ".join(failed))
 

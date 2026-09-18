@@ -114,6 +114,7 @@ def test_old_vps_deletion_guard_requires_every_durable_gate() -> None:
         host="203.0.113.20",
     )
     job = replacement_job()
+    job.node_id = old.node_id
     job.old_vps_instance_id = old.id
     job.new_vps_instance_id = new.id
     deployment = Deployment(
@@ -134,6 +135,10 @@ def test_old_vps_deletion_guard_requires_every_durable_gate() -> None:
     job.master_verified_at = now
     job.final_health_verified_at = now
     OldVpsProtectionGuard.assert_can_delete(job, deployment=deployment, new_vps=new, old_vps=old)
+
+    old.node_id = uuid4()
+    with pytest.raises(SafetyViolationError, match="old_vps_node_identity"):
+        OldVpsProtectionGuard.assert_can_delete(job, deployment=deployment, new_vps=new, old_vps=old)
 
 
 def test_runtime_generated_secrets_are_file_references_with_owner_only_permissions(tmp_path: Path) -> None:

@@ -23,4 +23,6 @@ class Master3XUiClientFactory:
             password=settings.master_3xui_password,
             verify_tls=settings.master_3xui_verify_tls,
             timeout_seconds=settings.master_3xui_timeout_seconds,
+            connection_mode=settings.master_3xui_connection_mode,
+            local_base_url=settings.master_3xui_local_base_url,
         )

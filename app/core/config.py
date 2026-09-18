@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     hetzner_api_token: SecretStr | None = None
     linode_api_token: SecretStr | None = None
     master_3xui_base_url: str | None = None
+    master_3xui_connection_mode: Literal["auto", "remote", "local-host"] = "auto"
+    master_3xui_local_base_url: str | None = None
     master_3xui_api_token: SecretStr | None = None
     master_3xui_username: str | None = None
     master_3xui_password: SecretStr | None = None

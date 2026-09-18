@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.5.0-force-repair-hardening** — runtime controls plus idempotent, signed Force Repair are implemented on top of the safety-first production release.
+Current release: **1.5.2-master-auto-routing** — Master 3X-UI connectivity now supports both same-host Docker deployments and remote Master servers with safe automatic routing.
 
 ## Core replacement invariant
 

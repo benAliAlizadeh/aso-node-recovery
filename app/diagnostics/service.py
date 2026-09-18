@@ -144,9 +144,10 @@ class ApiHealthService:
             client = Master3XUiClientFactory.create(self.settings)
             try:
                 nodes = await client.list_nodes()
+                route = client.connection_route
             finally:
                 await client.aclose()
-            return f"authenticated; {len(nodes)} Master node(s) visible"
+            return f"authenticated via {route}; {len(nodes)} Master node(s) visible"
 
         return await self._timed("master-3xui", "3X-UI Master", "core", probe)
 

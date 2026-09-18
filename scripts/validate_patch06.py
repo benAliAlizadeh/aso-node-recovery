@@ -23,6 +23,7 @@ def main() -> None:
         "1.0.6-operational-onboarding",
         "1.0.7-health-readiness-hotfix",
         "1.1.0-smart-onboarding",
+        "1.2.0-telegram-registry-ui",
         },
         "bad VERSION",
     )

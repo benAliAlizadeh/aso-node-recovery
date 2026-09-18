@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.1.0-smart-onboarding** — all seven planned phases are implemented, with a safety-first production quick installer.
+Current release: **1.2.0-telegram-registry-ui** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
 
 ## Core replacement invariant
 
@@ -32,7 +32,7 @@ Only then may the old VPS be deleted.
 - AsyncSSH deployment and isolated 3X-UI installer
 - current 3X-UI Master API integration
 - crash recovery, deterministic provider reconciliation, DB leases and advisory lock
-- Telegram control plane with allow-list and signed destructive confirmations
+- Telegram control plane with allow-list, inline Node/Provider management, validated secret rotation, and signed destructive confirmations
 - persistent pause/resume
 - audit/event notifications
 - PostgreSQL backup/restore tooling
@@ -65,7 +65,7 @@ cp .env.example .env
 pytest
 ruff check .
 ruff format --check .
-python scripts/validate_patch11.py
+python scripts/validate_patch14.py
 python -m compileall -q app tests scripts migrations
 alembic upgrade head --sql > migration.sql
 ```
@@ -125,6 +125,14 @@ After installation, register existing infrastructure with read-only discovery:
 Provider region/type/image and Node host/port/basePath are discovered from the provider API and
 Master 3X-UI rather than typed manually. Provider access, Master probe, and the current Node API
 token are validated before registry persistence. See [Smart onboarding](docs/SMART_ONBOARDING.md).
+
+## Telegram registry management
+
+The same smart onboarding is available from Telegram `/start` → **Nodes** / **Providers**. Operators
+can add, inspect, test, rename, rotate provider/Node API credentials, rotate SSH credentials and
+remove local ASO registry records through inline buttons. Provider/Master/VPS discovery and access
+validation run before persistence. Registry removal never deletes provider infrastructure and never
+modifies the Master node.
 
 ## Production
 

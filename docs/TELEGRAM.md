@@ -15,7 +15,7 @@ All commands reject users outside the allow-list.
 
 ## First use
 
-A fresh installation has an empty registry. On the server run `./asoctl setup` first, then use `/start`. The start screen includes an inline menu for the main read-only views.
+A fresh installation can now be onboarded directly from `/start`. The **Providers** and **Nodes** inline menus support validated smart onboarding and management. `./asoctl setup` remains available as a server-side fallback.
 
 ## Commands
 
@@ -44,3 +44,23 @@ available so an operator can safely cancel a pre-master-switch job.
 When `ASO_TELEGRAM_NOTIFICATION_CHAT_ID` is set, the bot polls the append-only event log and sends
 notifications for node failures/recoveries and replacement lifecycle events. The notification cursor
 is persisted in the settings table so bot restarts do not intentionally replay the entire audit log.
+
+## Inline Node and Provider management
+
+`/start`, `/nodes`, and `/providers` expose inline keyboards. Provider management supports add,
+read-only API test, rename, token replacement, enable/disable, and safe local-registry removal. Node
+management supports smart add from Provider Instance/Server ID + Master Node ID, full access test,
+rename, Node API token replacement, SSH credential replacement, and safe local-registry removal.
+
+Secrets sent during a Telegram wizard are never written as plaintext DB fields. Secret messages are
+deleted when Telegram permissions allow it, candidates are validated before pointer swap, and only
+file references are persisted. Aborting a wizard cleans staged managed secret files.
+
+Adding a Node discovers provider IPv4/region/plan/image and Master endpoint metadata automatically.
+The wizard asks only for data which cannot be read back safely (for example current Node API token
+when the Master reports one, and SSH credentials). Provider + Master + Node API + SSH access are
+validated before the Node is committed.
+
+"Remove from ASO" means local registry removal only. It never calls provider delete/reboot/create
+and never mutates the Master. Nodes with replacement history are protected from hard registry
+removal so audit continuity is not destroyed.

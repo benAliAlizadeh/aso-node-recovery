@@ -22,11 +22,10 @@ from app.bot.formatters import (
     format_job_progress,
     format_jobs,
     format_node_detail,
-    format_nodes,
-    format_providers,
     format_settings,
 )
 from app.bot.notifier import TelegramEventNotifier
+from app.bot.registry_ui import TelegramRegistryController
 from app.control import ControlService, JobSnapshot
 from app.runtime import RuntimeContainer
 
@@ -42,6 +41,7 @@ class TelegramBotController:
         if self.settings.telegram_callback_secret is None:
             raise ValueError("Telegram callback secret is required")
         self.signer = CallbackSigner(self.settings.telegram_callback_secret)
+        self.registry_ui = TelegramRegistryController(runtime, self.authorizer, self.signer)
 
     def register(self, application: Application) -> None:
         handlers = [
@@ -62,6 +62,7 @@ class TelegramBotController:
             CallbackQueryHandler(self.callback, pattern=r"^(ck|rp|rc|ju|jr|ja|jc|pt|pe|pd)\."),
         ]
         application.add_handlers(handlers)
+        self.registry_ui.register(application)
 
     async def _authorized(self, update: Update) -> tuple[bool, int | None]:
         user_id = update.effective_user.id if update.effective_user else None
@@ -122,9 +123,11 @@ class TelegramBotController:
         if action == "status":
             text = format_dashboard(await self.control.dashboard())
         elif action == "nodes":
-            text = format_nodes(await self.control.list_nodes(limit=50))
+            await self.registry_ui.render_nodes(query)
+            return
         elif action == "providers":
-            text = format_providers(await self.control.list_providers())
+            await self.registry_ui.render_providers(query)
+            return
         elif action == "jobs":
             text = format_jobs(await self.control.list_jobs(limit=20))
         elif action == "logs":
@@ -146,15 +149,7 @@ class TelegramBotController:
         ok, _ = await self._authorized(update)
         if not ok or not update.effective_message:
             return
-        nodes = await self.control.list_nodes(limit=50)
-        keyboard = [
-            [InlineKeyboardButton(node.name, callback_data=f"ck.{node.id.hex}")]
-            for node in nodes[:20]
-        ]
-        await update.effective_message.reply_text(
-            format_nodes(nodes),
-            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-        )
+        await self.registry_ui.render_nodes(update.effective_message)
 
     async def node(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ok, _ = await self._authorized(update)
@@ -248,20 +243,7 @@ class TelegramBotController:
         ok, _ = await self._authorized(update)
         if not ok or not update.effective_message:
             return
-        providers = await self.control.list_providers()
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    f"{'Disable' if provider.is_active else 'Enable'} {provider.key}",
-                    callback_data=f"pt.{provider.id.hex}",
-                )
-            ]
-            for provider in providers
-        ]
-        await update.effective_message.reply_text(
-            format_providers(providers),
-            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
-        )
+        await self.registry_ui.render_providers(update.effective_message)
 
     async def pause(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         ok, user_id = await self._authorized(update)

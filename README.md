@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.4.0-runtime-controls** — smart onboarding and full inline Telegram registry management are implemented on top of the safety-first production release.
+Current release: **1.5.0-force-repair-hardening** — runtime controls plus idempotent, signed Force Repair are implemented on top of the safety-first production release.
 
 ## Core replacement invariant
 
@@ -34,6 +34,7 @@ Only then may the old VPS be deleted.
 - crash recovery, deterministic provider reconciliation, DB leases and advisory lock
 - Telegram control plane with allow-list, inline Node/Provider management, validated secret rotation, and signed destructive confirmations
 - persistent pause/resume
+- signed/idempotent Force Repair that bypasses only the initial FAILED-state admission check
 - audit/event notifications
 - PostgreSQL backup/restore tooling
 - hardened production Docker Compose
@@ -52,6 +53,10 @@ Telegram controls can only make the process as permissive as the host allows. `L
 server-side DRY_RUN, mutation, and emergency-stop gates already permit real infrastructure changes.
 Automatic repair only considers nodes explicitly set to `AUTO REPAIR`; `MONITOR ONLY` never triggers
 automatic replacement. Old-VPS deletion remains independently protected.
+
+Force Repair is available from the node Telegram UI or `/force <id|name>`. It does not skip new-IP,
+SSH/3X-UI, Master, final-health, concurrency, or old-VPS deletion safety gates. See
+[Force Repair](docs/FORCE_REPAIR.md).
 
 ## Safety defaults
 
@@ -79,7 +84,7 @@ cp .env.example .env
 pytest
 ruff check .
 ruff format --check .
-python scripts/validate_patch14.py
+python scripts/validate_patch17.py
 python -m compileall -q app tests scripts migrations
 alembic upgrade head --sql > migration.sql
 ```
@@ -100,7 +105,7 @@ Apply all migrations before starting worker/bot processes:
 alembic upgrade head
 ```
 
-Current Alembic head: `20260919_0005`.
+Current Alembic head: `20260919_0006`.
 
 ## Quick installation
 
@@ -160,6 +165,7 @@ See:
 - [Security controls](docs/SECURITY.md)
 - [Release checklist](docs/RELEASE.md)
 - [Replacement workflow](docs/REPLACEMENT.md)
+- [Force Repair](docs/FORCE_REPAIR.md)
 - [Master 3X-UI](docs/MASTER_3XUI.md)
 
 Start the hardened stack only after `.env` is populated:

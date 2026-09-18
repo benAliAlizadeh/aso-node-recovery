@@ -86,7 +86,7 @@ def format_jobs(jobs: list[JobSnapshot]) -> str:
     for job in jobs:
         lines.append(
             f"- {short_id(job.id)} node={short_id(job.node_id)} "
-            f"{job.state.value}/{job.checkpoint.value} "
+            f"[{job.trigger_mode.value}] {job.state.value}/{job.checkpoint.value} "
             f"attempt={job.attempt_count}/{job.max_attempts}"
         )
     return "\n".join(lines)
@@ -137,7 +137,8 @@ def format_job_progress(job: JobSnapshot) -> str:
             current_index = index
             break
 
-    lines = [f"Replacement {short_id(job.id)}", ""]
+    title = "Force Repair" if job.trigger_mode.value == "force" else "Replacement"
+    lines = [f"{title} {short_id(job.id)}", ""]
     for index, (label, _) in enumerate(_PROGRESS):
         if job.checkpoint is ReplacementCheckpoint.COMPLETED or index < current_index:
             icon = "✅"

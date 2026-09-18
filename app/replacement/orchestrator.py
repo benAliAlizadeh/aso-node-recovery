@@ -40,6 +40,7 @@ from app.models import (
     ReplacementCheckpoint,
     ReplacementJob,
     ReplacementJobState,
+    ReplacementTriggerMode,
     SecretReferenceBackend,
     SshAuthMethod,
     VpsInstance,
@@ -135,8 +136,21 @@ class ReplacementOrchestrator:
         if self.operational_settings is not None and await self.operational_settings.is_paused():
             raise ReplacementDeferredError("system is paused")
 
-    async def trigger(self, node_id: UUID) -> UUID:
-        """Create one active replacement job for a FAILED node, idempotently."""
+    async def trigger(
+        self,
+        node_id: UUID,
+        *,
+        force: bool = False,
+        request_key: str | None = None,
+    ) -> UUID:
+        """Create one replacement job idempotently.
+
+        Standard triggers require ``FAILED``. Force repair bypasses only that initial health-state
+        requirement; every provisioning, verification, Master and deletion safety gate remains
+        unchanged.
+        """
+        if request_key is not None and not (8 <= len(request_key) <= 64):
+            raise ReplacementConfigurationError("replacement request key must be 8..64 characters")
         effective_dry_run = (
             await self.operational_settings.effective_dry_run(self.settings)
             if self.operational_settings is not None
@@ -153,13 +167,31 @@ class ReplacementOrchestrator:
                 jobs = ReplacementJobRepository(session)
                 vps = VpsInstanceRepository(session)
 
+                if request_key is not None:
+                    replay = await jobs.get_by_request_key(request_key)
+                    if replay is not None:
+                        return replay.id
+
                 node = await nodes.get(node_id)
                 if node is None:
                     raise ReplacementConfigurationError("node does not exist")
                 active = await jobs.get_active_for_node(node_id)
                 if active is not None:
                     return active.id
-                if node.state is not NodeState.FAILED:
+                if force:
+                    if node.state is NodeState.DISABLED:
+                        raise ReplacementConfigurationError(
+                            "force repair is blocked while the node is disabled"
+                        )
+                    if node.state in {
+                        NodeState.REPLACING,
+                        NodeState.DEPLOYING,
+                        NodeState.VERIFYING,
+                    }:
+                        raise ReplacementBusyError(
+                            f"node is already in workflow state {node.state.value}"
+                        )
+                elif node.state is not NodeState.FAILED:
                     raise ReplacementConfigurationError(
                         f"replacement requires FAILED node; current state={node.state.value}"
                     )
@@ -175,25 +207,40 @@ class ReplacementOrchestrator:
                 if provider is None or not provider.is_active:
                     raise ReplacementConfigurationError("node provider is missing or inactive")
 
+                original_state = node.state
                 job = ReplacementJob(
                     node_id=node.id,
                     state=ReplacementJobState.PENDING,
                     checkpoint=ReplacementCheckpoint.CREATED,
                     active_slot=True,
                     is_dry_run=effective_dry_run,
+                    trigger_mode=(
+                        ReplacementTriggerMode.FORCE
+                        if force
+                        else ReplacementTriggerMode.STANDARD
+                    ),
+                    request_key=request_key,
+                    original_node_state=original_state.value if force else None,
                     attempt_count=0,
                     max_attempts=self.settings.max_replacement_attempts,
                     old_vps_instance_id=old_vps.id,
                 )
                 await jobs.add(job)
                 if not job.is_dry_run:
-                    NodeStateMachine.transition(node, NodeState.REPLACING)
+                    if force:
+                        NodeStateMachine.transition_forced_replacement(node)
+                    else:
+                        NodeStateMachine.transition(node, NodeState.REPLACING)
                 await self._add_event(
                     session,
                     job,
                     EventType.REPLACEMENT_STARTED,
-                    "Replacement workflow started",
-                    payload={"dry_run": job.is_dry_run},
+                    "Force repair workflow started" if force else "Replacement workflow started",
+                    payload={
+                        "dry_run": job.is_dry_run,
+                        "force": force,
+                        "original_node_state": original_state.value,
+                    },
                 )
                 await session.commit()
                 return job.id
@@ -267,12 +314,8 @@ class ReplacementOrchestrator:
                 )
             self.state_machine.transition(job, ReplacementCheckpoint.CANCELLED)
             node = await NodeRepository(session).get(job.node_id)
-            if node is not None and not job.is_dry_run and node.state in {
-                NodeState.REPLACING,
-                NodeState.DEPLOYING,
-                NodeState.VERIFYING,
-            }:
-                NodeStateMachine.transition(node, NodeState.FAILED)
+            if node is not None and not job.is_dry_run:
+                self._restore_node_after_unsuccessful_job(node, job)
             await session.commit()
 
     async def _dispatch(
@@ -974,12 +1017,8 @@ class ReplacementOrchestrator:
             job.last_error_message = str(exc)[:2000]
             self.state_machine.transition(job, ReplacementCheckpoint.FAILED)
             node = await NodeRepository(session).get(job.node_id)
-            if node is not None and not job.is_dry_run and node.state in {
-                NodeState.REPLACING,
-                NodeState.DEPLOYING,
-                NodeState.VERIFYING,
-            }:
-                NodeStateMachine.transition(node, NodeState.FAILED)
+            if node is not None and not job.is_dry_run:
+                self._restore_node_after_unsuccessful_job(node, job)
             await self._add_event(
                 session,
                 job,
@@ -989,6 +1028,25 @@ class ReplacementOrchestrator:
                 payload={"error_code": job.last_error_code},
             )
             await session.commit()
+
+    @staticmethod
+    def _restore_node_after_unsuccessful_job(node: Node, job: ReplacementJob) -> None:
+        active_states = {NodeState.REPLACING, NodeState.DEPLOYING, NodeState.VERIFYING}
+        if node.state not in active_states:
+            return
+        if (
+            job.trigger_mode is ReplacementTriggerMode.FORCE
+            and job.master_updated_at is None
+            and job.original_node_state
+        ):
+            try:
+                original = NodeState(job.original_node_state)
+            except ValueError:
+                NodeStateMachine.transition(node, NodeState.FAILED)
+                return
+            NodeStateMachine.restore_after_forced_replacement(node, original)
+            return
+        NodeStateMachine.transition(node, NodeState.FAILED)
 
     async def _acquire_lease(self, job_id: UUID, token: str) -> bool:
         now = datetime.now(UTC)

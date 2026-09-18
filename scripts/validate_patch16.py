@@ -12,7 +12,7 @@ def require(path: str, *needles: str) -> None:
 
 def main() -> None:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "1.4.0-runtime-controls":
+    if version not in {"1.4.0-runtime-controls", "1.5.0-force-repair-hardening"}:
         raise SystemExit(f"[FAIL] unexpected VERSION: {version}")
 
     require(

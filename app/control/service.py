@@ -24,6 +24,7 @@ from app.models import (
     NodeState,
     ReplacementCheckpoint,
     ReplacementJobState,
+    ReplacementTriggerMode,
     RuntimeExecutionMode,
 )
 from app.replacement.orchestrator import ReplacementOrchestrator, ReplacementRunResult
@@ -81,6 +82,7 @@ class JobSnapshot:
     created_at: datetime
     completed_at: datetime | None
     last_error_message: str | None
+    trigger_mode: ReplacementTriggerMode = ReplacementTriggerMode.STANDARD
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +193,31 @@ class ControlService:
             node_id=node_id,
             replacement_job_id=job_id,
             payload={"actor_user_id": actor_user_id},
+        )
+        return job_id
+
+    async def trigger_force_repair(
+        self,
+        node_id: UUID,
+        *,
+        actor_user_id: int,
+        request_key: str,
+    ) -> UUID:
+        job_id = await self.orchestrator.trigger(
+            node_id,
+            force=True,
+            request_key=request_key,
+        )
+        await self._audit(
+            EventType.CONTROL_ACTION,
+            "Authorized operator confirmed FORCE REPAIR",
+            node_id=node_id,
+            replacement_job_id=job_id,
+            payload={
+                "actor_user_id": actor_user_id,
+                "force": True,
+                "request_key": request_key,
+            },
         )
         return job_id
 
@@ -435,6 +462,7 @@ class ControlService:
             id=job.id,
             node_id=job.node_id,
             state=job.state,
+            trigger_mode=job.trigger_mode or ReplacementTriggerMode.STANDARD,
             checkpoint=job.checkpoint,
             attempt_count=job.attempt_count,
             max_attempts=job.max_attempts,

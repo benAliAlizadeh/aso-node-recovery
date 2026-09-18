@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from uuid import UUID
 
@@ -56,6 +57,7 @@ class TelegramBotController:
             CommandHandler("node", self.node),
             CommandHandler("check", self.check),
             CommandHandler("replace", self.replace),
+            CommandHandler("force", self.force_repair),
             CommandHandler("jobs", self.jobs),
             CommandHandler("logs", self.logs),
             CommandHandler("settings", self.settings_command),
@@ -64,7 +66,7 @@ class TelegramBotController:
             CommandHandler("pause", self.pause),
             CommandHandler("resume", self.resume),
             CallbackQueryHandler(self.menu_callback, pattern=r"^m\."),
-            CallbackQueryHandler(self.callback, pattern=r"^(ck|rp|rc|ju|jr|ja|jc|pt|pe|pd)\."),
+            CallbackQueryHandler(self.callback, pattern=r"^(ck|rp|rc|fr|fc|ju|jr|ja|jc|pt|pe|pd)\."),
         ]
         application.add_handlers(handlers)
         self.registry_ui.register(application)
@@ -119,7 +121,7 @@ class TelegramBotController:
             + registry_note
             + "\n\nUse the menu below or commands:\n"
             "/status /nodes /node <id|name> /check <id|name>\n"
-            "/replace <id|name> /jobs /logs /providers /settings\n"
+            "/replace <id|name> /force <id|name> /jobs /logs /providers /settings\n"
             "/controls /pause /resume",
             reply_markup=self._main_menu(),
         )
@@ -184,10 +186,13 @@ class TelegramBotController:
             return
         node_id = detail.node.id
         keyboard = InlineKeyboardMarkup(
-            [[
-                InlineKeyboardButton("Check", callback_data=f"ck.{node_id.hex}"),
-                InlineKeyboardButton("Replace", callback_data=f"rp.{node_id.hex}"),
-            ]]
+            [
+                [
+                    InlineKeyboardButton("Check", callback_data=f"ck.{node_id.hex}"),
+                    InlineKeyboardButton("Replace", callback_data=f"rp.{node_id.hex}"),
+                ],
+                [InlineKeyboardButton("⚠️ Force Repair", callback_data=f"fr.{node_id.hex}")],
+            ]
         )
         await update.effective_message.reply_text(format_node_detail(detail), reply_markup=keyboard)
 
@@ -221,6 +226,19 @@ class TelegramBotController:
             await update.effective_message.reply_text("Node not found.")
             return
         await self._send_replace_confirmation(update.effective_message, detail.node.id, user_id)
+
+    async def force_repair(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        ok, user_id = await self._authorized(update)
+        if not ok or user_id is None or not update.effective_message:
+            return
+        if not context.args:
+            await update.effective_message.reply_text("Usage: /force <uuid|name>")
+            return
+        detail = await self.control.resolve_node(" ".join(context.args))
+        if detail is None:
+            await update.effective_message.reply_text("Node not found.")
+            return
+        await self._send_force_confirmation(update.effective_message, detail.node.id, user_id)
 
     async def jobs(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         ok, _ = await self._authorized(update)
@@ -295,7 +313,7 @@ class TelegramBotController:
         await query.answer()
         try:
             action, raw_id = query.data.split(".", 1)
-            if action in {"rc", "jr", "jc", "pe", "pd"}:
+            if action in {"rc", "fc", "jr", "jc", "pe", "pd"}:
                 verified = self.signer.verify(query.data, user_id)
                 entity_id = verified.entity_id
             else:
@@ -319,6 +337,30 @@ class TelegramBotController:
         if action == "rc":
             job_id = await self.control.trigger_replacement(entity_id, actor_user_id=user_id)
             await query.edit_message_text("Replacement accepted. Starting workflow…")
+            context.application.create_task(
+                self._run_job_progress(context.application, query.message.chat_id, job_id, user_id)
+            )
+            return
+
+        if action == "fr":
+            await self._edit_force_confirmation(query, entity_id, user_id)
+            return
+        if action == "fc":
+            request_key = self._force_request_key(query.data, user_id)
+            try:
+                job_id = await self.control.trigger_force_repair(
+                    entity_id,
+                    actor_user_id=user_id,
+                    request_key=request_key,
+                )
+            except Exception as exc:
+                logger.exception("telegram_force_repair_rejected", extra={"node_id": str(entity_id)})
+                await query.edit_message_text(f"Force Repair rejected: {self._safe_operator_error(exc)}")
+                return
+            await query.edit_message_text(
+                "Force Repair accepted. Only the initial health-state requirement was bypassed; "
+                "all replacement safety gates remain enforced. Starting workflow…"
+            )
             context.application.create_task(
                 self._run_job_progress(context.application, query.message.chat_id, job_id, user_id)
             )
@@ -405,6 +447,51 @@ class TelegramBotController:
             ),
         )
 
+    async def _send_force_confirmation(
+        self,
+        message: object,
+        node_id: UUID,
+        user_id: int,
+    ) -> None:
+        signed = self.signer.encode("fc", node_id, user_id)
+        await message.reply_text(
+            "⚠️ FORCE REPAIR\n\n"
+            "This starts replacement even if Check-Host currently reports the node reachable. "
+            "It bypasses ONLY the initial FAILED-state requirement. New-IP checks, SSH/3X-UI "
+            "verification, Master verification, final health check, concurrency limits and old-VPS "
+            "deletion protection remain mandatory.\n\nContinue?",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⚠️ CONFIRM FORCE REPAIR", callback_data=signed)]]
+            ),
+        )
+
+    async def _edit_force_confirmation(
+        self, query: object, node_id: UUID, user_id: int
+    ) -> None:
+        signed = self.signer.encode("fc", node_id, user_id)
+        await query.edit_message_text(
+            "⚠️ FORCE REPAIR\n\n"
+            "The node does not need to be FAILED. All downstream safety and verification gates "
+            "still apply. The old VPS remains protected until the normal final cleanup gate.\n\n"
+            "Confirm?",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⚠️ CONFIRM FORCE REPAIR", callback_data=signed)]]
+            ),
+        )
+
+    @staticmethod
+    def _force_request_key(callback_data: str, user_id: int) -> str:
+        digest = hashlib.sha256(f"{user_id}:{callback_data}".encode("utf-8")).hexdigest()[:48]
+        return f"tg-force:{digest}"
+
+    @staticmethod
+    def _safe_operator_error(exc: Exception) -> str:
+        text = (str(exc).strip() or exc.__class__.__name__)[:500]
+        lowered = text.lower()
+        if any(token in lowered for token in ("token=", "password=", "authorization:")):
+            return "operation rejected; sensitive details were hidden. Check service logs."
+        return text
+
     async def _run_job_progress(
         self,
         application: Application,
@@ -469,6 +556,8 @@ def build_telegram_application(runtime: RuntimeContainer) -> Application:
                 BotCommand("status", "System dashboard"),
                 BotCommand("nodes", "List registered nodes"),
                 BotCommand("check", "Check one node"),
+                BotCommand("replace", "Replace a failed node"),
+                BotCommand("force", "Force repair a node"),
                 BotCommand("jobs", "Recent replacement jobs"),
                 BotCommand("providers", "Provider status"),
                 BotCommand("apihealth", "Check external API health"),

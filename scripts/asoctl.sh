@@ -345,7 +345,7 @@ case "$cmd" in
   validate)
     compose config >/dev/null
     compose run --rm api python scripts/security_review.py
-    compose run --rm api python scripts/validate_patch16.py
+    compose run --rm api python scripts/validate_patch17.py
     echo "ASO validation passed."
     ;;
   safety)

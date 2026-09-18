@@ -49,6 +49,11 @@ class NodeCheckOutcome(StrEnum):
     ERROR = "error"
 
 
+class ReplacementTriggerMode(StrEnum):
+    STANDARD = "standard"
+    FORCE = "force"
+
+
 class ReplacementJobState(StrEnum):
     PENDING = "pending"
     PROVISIONING = "provisioning"

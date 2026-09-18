@@ -27,6 +27,7 @@ from app.models.enums import (
     NodeCheckOutcome,
     ReplacementCheckpoint,
     ReplacementJobState,
+    ReplacementTriggerMode,
     VpsInstanceRole,
     VpsInstanceState,
 )
@@ -140,8 +141,14 @@ class ReplacementJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "replacement_jobs"
     __table_args__ = (
         UniqueConstraint("node_id", "active_slot", name="one_active_replacement_per_node"),
+        UniqueConstraint("request_key", name="replacement_request_key_unique"),
         CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
         CheckConstraint("max_attempts > 0", name="max_attempts_positive"),
+        CheckConstraint(
+            "original_node_state IS NULL OR original_node_state IN "
+            "('unknown', 'healthy', 'degraded', 'failed')",
+            name="replacement_original_node_state",
+        ),
         Index("ix_replacement_jobs_node_state", "node_id", "state"),
     )
 
@@ -174,6 +181,20 @@ class ReplacementJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     active_slot: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
     is_dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trigger_mode: Mapped[ReplacementTriggerMode] = mapped_column(
+        Enum(
+            ReplacementTriggerMode,
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            name="replacement_trigger_mode",
+            length=16,
+        ),
+        nullable=False,
+        default=ReplacementTriggerMode.STANDARD,
+    )
+    request_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    original_node_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     old_vps_instance_id: Mapped[UUID | None] = mapped_column(

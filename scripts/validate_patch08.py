@@ -15,7 +15,7 @@ def main() -> None:
         "1.1.0-smart-onboarding",
         "1.2.0-telegram-registry-ui",
         "1.3.0-api-health-center",
-        "1.4.0-runtime-controls",
+        "1.4.0-runtime-controls", "1.5.0-force-repair-hardening",
     }
     compose = (ROOT / "docker-compose.prod.yml").read_text()
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()

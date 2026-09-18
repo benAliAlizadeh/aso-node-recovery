@@ -31,7 +31,7 @@ def test_asoctl_stop_never_removes_named_volumes() -> None:
 
 
 def test_quick_install_release_version_is_consistent() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.4.0-runtime-controls"
+    assert (ROOT / "VERSION").read_text().strip() == "1.5.0-force-repair-hardening"
     pyproject = (ROOT / "pyproject.toml").read_text()
     assert 'version = "1.1.0"' in pyproject
     assert (ROOT / "docs" / "QUICK_INSTALL.md").is_file()

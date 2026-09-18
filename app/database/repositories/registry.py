@@ -140,6 +140,11 @@ class ReplacementJobRepository(SqlAlchemyRepository[ReplacementJob]):
             )
         )
 
+    async def get_by_request_key(self, request_key: str) -> ReplacementJob | None:
+        return await self.session.scalar(
+            select(ReplacementJob).where(ReplacementJob.request_key == request_key).limit(1)
+        )
+
     async def count_active(self) -> int:
         value = await self.session.scalar(
             select(func.count()).select_from(ReplacementJob).where(

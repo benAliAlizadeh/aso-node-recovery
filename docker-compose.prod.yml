@@ -44,14 +44,17 @@ services:
       - sh
       - -ec
       - |
-        chmod 0700 /var/lib/aso/secrets /var/lib/aso/backups
         chown aso:aso /var/lib/aso/secrets /var/lib/aso/backups
+        chmod 0700 /var/lib/aso/secrets /var/lib/aso/backups
     restart: "no"
     read_only: true
     cap_drop:
       - ALL
     cap_add:
       - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    network_mode: "none"
     security_opt:
       - no-new-privileges:true
     volumes:

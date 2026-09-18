@@ -19,8 +19,8 @@ COPY alembic.ini ./
 COPY scripts ./scripts
 
 RUN python -m pip install --no-cache-dir . \
-    && mkdir -p /var/lib/aso/secrets /var/lib/aso/backups \
-    && chown -R aso:aso /app /var/lib/aso
+    && install -d -m 0700 -o aso -g aso /var/lib/aso/secrets /var/lib/aso/backups \
+    && chown -R aso:aso /app
 
 USER aso
 

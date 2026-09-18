@@ -12,7 +12,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    require((ROOT / "VERSION").read_text().strip() in {"1.0.1-quick-installer", "1.0.2-safety-hardening", "1.0.3-installer-permissions-hotfix"}, "bad VERSION")
+    require((ROOT / "VERSION").read_text().strip() in {"1.0.1-quick-installer", "1.0.2-safety-hardening", "1.0.3-installer-permissions-hotfix", "1.0.4-runtime-volume-capability-hotfix"}, "bad VERSION")
     for relative in (
         "install.sh",
         "asoctl",

@@ -31,9 +31,9 @@ def test_asoctl_stop_never_removes_named_volumes() -> None:
 
 
 def test_quick_install_release_version_is_consistent() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.3-installer-permissions-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() == "1.0.4-runtime-volume-capability-hotfix"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert 'version = "1.0.3"' in pyproject
+    assert 'version = "1.0.4"' in pyproject
     assert (ROOT / "docs" / "QUICK_INSTALL.md").is_file()
     assert (ROOT / "install.sh").is_file()
     assert (ROOT / "asoctl").is_file()
@@ -46,6 +46,9 @@ def test_production_compose_initializes_private_runtime_volumes() -> None:
     assert "chmod 0700 /var/lib/aso/secrets /var/lib/aso/backups" in compose
     assert "chown aso:aso /var/lib/aso/secrets /var/lib/aso/backups" in compose
     assert "- CHOWN" in compose
+    assert "- FOWNER" in compose
+    assert "- DAC_OVERRIDE" in compose
+    assert 'network_mode: "none"' in compose
 
 
 def test_quick_installer_runs_runtime_volume_initializer_before_migrations() -> None:

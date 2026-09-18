@@ -6,7 +6,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.3-installer-permissions-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() in {
+        "1.0.3-installer-permissions-hotfix",
+        "1.0.4-runtime-volume-capability-hotfix",
+    }
     compose = (ROOT / "docker-compose.prod.yml").read_text()
     installer = (ROOT / "scripts" / "quick_install.sh").read_text()
     security = (ROOT / "scripts" / "security_review.py").read_text()

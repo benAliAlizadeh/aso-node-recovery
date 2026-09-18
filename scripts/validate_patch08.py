@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> None:
+    assert (ROOT / "VERSION").read_text().strip() == "1.0.3-installer-permissions-hotfix"
+    compose = (ROOT / "docker-compose.prod.yml").read_text()
+    installer = (ROOT / "scripts" / "quick_install.sh").read_text()
+    security = (ROOT / "scripts" / "security_review.py").read_text()
+    assert "runtime-init:" in compose
+    assert "condition: service_completed_successfully" in compose
+    assert "chmod 0700 /var/lib/aso/secrets /var/lib/aso/backups" in compose
+    assert "chown aso:aso /var/lib/aso/secrets /var/lib/aso/backups" in compose
+    assert "compose run --rm --no-deps runtime-init" in installer
+    assert "runtime secret directory is owned by the runtime user" in security
+    assert "runtime backup directory is owner-only" in security
+    print("Patch 08 validation: PASS")
+
+
+if __name__ == "__main__":
+    main()

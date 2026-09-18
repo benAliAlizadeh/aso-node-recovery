@@ -10,6 +10,8 @@ x-app-common: &app-common
     ASO_RUNTIME_SECRET_DIR: /var/lib/aso/secrets
     ASO_BACKUP_DIR: /var/lib/aso/backups
   depends_on:
+    runtime-init:
+      condition: service_completed_successfully
     postgres:
       condition: service_healthy
   restart: unless-stopped
@@ -33,6 +35,29 @@ x-app-common: &app-common
     - aso_backups:/var/lib/aso/backups
 
 services:
+  runtime-init:
+    build:
+      context: .
+      dockerfile: docker/prod.Dockerfile
+    user: "0:0"
+    command:
+      - sh
+      - -ec
+      - |
+        chmod 0700 /var/lib/aso/secrets /var/lib/aso/backups
+        chown aso:aso /var/lib/aso/secrets /var/lib/aso/backups
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - aso_runtime_secrets:/var/lib/aso/secrets
+      - aso_backups:/var/lib/aso/backups
+
   api:
     <<: *app-common
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

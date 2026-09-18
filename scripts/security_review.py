@@ -37,8 +37,27 @@ def main() -> None:
 
     secret_dir = Path(settings.runtime_secret_dir)
     if secret_dir.exists():
-        mode = stat.S_IMODE(secret_dir.stat().st_mode)
+        secret_stat = secret_dir.stat()
+        mode = stat.S_IMODE(secret_stat.st_mode)
         checks.append(("runtime secret directory is owner-only", mode & 0o077 == 0))
+        checks.append(
+            (
+                "runtime secret directory is owned by the runtime user",
+                secret_stat.st_uid == os.geteuid(),
+            )
+        )
+
+    backup_dir = Path(settings.backup_dir)
+    if backup_dir.exists():
+        backup_stat = backup_dir.stat()
+        backup_mode = stat.S_IMODE(backup_stat.st_mode)
+        checks.append(("runtime backup directory is owner-only", backup_mode & 0o077 == 0))
+        checks.append(
+            (
+                "runtime backup directory is owned by the runtime user",
+                backup_stat.st_uid == os.geteuid(),
+            )
+        )
 
     failed = [name for name, ok in checks if not ok]
     for name, ok in checks:

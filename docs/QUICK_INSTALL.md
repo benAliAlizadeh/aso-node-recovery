@@ -79,3 +79,11 @@ The software is installed, but production onboarding still requires operator-own
 6. explicitly authorize one production replacement E2E test.
 
 Only after that controlled process should real-infrastructure mutation be considered.
+
+
+## Runtime volume permissions
+
+The installer initializes the persistent runtime secret and backup Docker volumes with owner-only
+permissions before migrations or the production security review run. This prevents Docker's default
+named-volume root directory permissions from blocking startup or exposing runtime secret metadata.
+The application services never run this initialization as an unrestricted long-lived root process.

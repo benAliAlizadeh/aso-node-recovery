@@ -11,7 +11,7 @@ from app.core.config import Settings
 
 
 def main() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.2-safety-hardening"
+    assert (ROOT / "VERSION").read_text().strip() in {"1.0.2-safety-hardening", "1.0.3-installer-permissions-hotfix"}
     settings = Settings()
     assert settings.dry_run is True
     assert settings.allow_real_infrastructure_mutation is False

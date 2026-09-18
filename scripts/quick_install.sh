@@ -278,6 +278,9 @@ install_stack() {
   log "Starting PostgreSQL."
   compose up -d postgres
 
+  log "Securing persistent runtime secret and backup volumes."
+  compose run --rm --no-deps runtime-init
+
   log "Applying Alembic migrations."
   compose run --rm api alembic upgrade head
 

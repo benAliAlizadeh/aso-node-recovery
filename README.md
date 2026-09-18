@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.0.0-production-release** — all seven planned phases are implemented.
+Current release: **1.0.1-quick-installer** — all seven planned phases are implemented, with a safety-first production quick installer.
 
 ## Core replacement invariant
 
@@ -85,6 +85,20 @@ alembic upgrade head
 ```
 
 Current Alembic head: `20260917_0003`.
+
+## Quick installation
+
+For a fresh Ubuntu/Debian production host, the simplest safe bootstrap is:
+
+```bash
+chmod +x install.sh asoctl scripts/*.sh
+sudo ./install.sh
+```
+
+The installer provisions Docker/Compose when required, creates a protected `.env`, generates local
+secrets, starts PostgreSQL, applies migrations, runs the security review, starts the safe production
+stack, and verifies `/health`. It **always** leaves real infrastructure mutation and replacement workers
+disabled. See [Quick installation](docs/QUICK_INSTALL.md).
 
 ## Production
 

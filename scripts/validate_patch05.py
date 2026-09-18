@@ -15,7 +15,8 @@ def main() -> None:
     from app.core.config import Settings
     from app.models import EventType
 
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.0.0-production-release"
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert version in {"1.0.0-production-release", "1.0.1-quick-installer"}
 
     required = [
         "app/control/service.py",

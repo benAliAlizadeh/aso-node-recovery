@@ -37,8 +37,8 @@ def main() -> None:
         raise SystemExit(f"Patch 03 validation failed; missing files: {missing}")
 
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if version not in {"0.5.0-providers-deployment", "0.6.0-master-replacement"}:
-        raise SystemExit(f"Patch 03 validation failed; unexpected VERSION: {version}")
+    if not version:
+        raise SystemExit("Patch 03 validation failed; VERSION is empty")
 
     settings = Settings()
     if settings.dry_run is not True:
@@ -52,12 +52,17 @@ def main() -> None:
     if DryRunProvider.__name__ != "DryRunProvider":
         raise SystemExit("Patch 03 validation failed; dry-run provider import failed")
 
-    bot_files = sorted((ROOT / "app" / "bot").glob("*.py"))
-    if [path.name for path in bot_files] != ["__init__.py"]:
-        raise SystemExit("Patch 03 validation failed; Telegram Phase 7 was implemented too early")
+    if version == "0.5.0-providers-deployment":
+        bot_files = sorted((ROOT / "app" / "bot").glob("*.py"))
+        if [path.name for path in bot_files] != ["__init__.py"]:
+            raise SystemExit(
+                "Patch 03 validation failed; Telegram Phase 7 was implemented too early"
+            )
 
-    if (ROOT / "app" / "services" / "replacement.py").exists():
-        raise SystemExit("Patch 03 validation failed; Phase 6 orchestrator was implemented too early")
+        if (ROOT / "app" / "services" / "replacement.py").exists():
+            raise SystemExit(
+                "Patch 03 validation failed; Phase 6 orchestrator was implemented too early"
+            )
 
     print("Patch 03 validation: PASS")
 

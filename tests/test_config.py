@@ -34,3 +34,43 @@ def test_replacement_worker_and_emergency_controls_are_safe_by_default() -> None
     assert settings.replacement_worker_enabled is False
     assert settings.replacement_emergency_stop is False
     assert settings.replacement_job_lease_seconds >= settings.provisioning_timeout_seconds
+
+
+
+def test_telegram_is_disabled_and_restore_is_disabled_by_default() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.telegram_bot_enabled is False
+    assert settings.telegram_authorized_user_ids == ()
+    assert settings.allow_database_restore is False
+    assert settings.worker_scheduler_enabled is False
+
+
+def test_enabled_telegram_requires_allowlist_and_callback_secret() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            telegram_bot_enabled=True,
+            telegram_bot_token="token",
+        )
+
+    settings = Settings(
+        _env_file=None,
+        telegram_bot_enabled=True,
+        telegram_bot_token="token",
+        telegram_authorized_user_ids=(123,),
+        telegram_callback_secret="x" * 32,
+    )
+    assert settings.telegram_authorized_user_ids == (123,)
+
+
+def test_production_refuses_disabled_transport_verification() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, environment="production", ssh_verify_host_key=False)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, environment="production", master_3xui_verify_tls=False)

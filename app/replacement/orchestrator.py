@@ -65,6 +65,7 @@ from app.replacement.reachability import ReplacementReachabilityVerifier
 from app.replacement.safety import OldVpsProtectionGuard
 from app.replacement.state import ReplacementStateMachine
 from app.services.node_state import NodeStateMachine
+from app.services.operational_settings import OperationalSettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class ReplacementOrchestrator:
         admission_lock: PostgresGlobalReplacementLock | None = None,
         state_machine: ReplacementStateMachine | None = None,
         old_vps_guard: OldVpsProtectionGuard | None = None,
+        operational_settings: OperationalSettingsService | None = None,
     ) -> None:
         self.database = database
         self.settings = settings
@@ -126,10 +128,16 @@ class ReplacementOrchestrator:
         self.admission_lock = admission_lock or PostgresGlobalReplacementLock(database)
         self.state_machine = state_machine or ReplacementStateMachine()
         self.old_vps_guard = old_vps_guard or OldVpsProtectionGuard()
+        self.operational_settings = operational_settings
+
+    async def _assert_not_paused(self) -> None:
+        if self.operational_settings is not None and await self.operational_settings.is_paused():
+            raise ReplacementDeferredError("system is paused")
 
     async def trigger(self, node_id: UUID) -> UUID:
         """Create one active replacement job for a FAILED node, idempotently."""
         self._assert_not_emergency_stopped()
+        await self._assert_not_paused()
         async with self.admission_lock.acquire() as acquired:
             if not acquired:
                 raise ReplacementBusyError("replacement admission lock is busy")
@@ -191,6 +199,7 @@ class ReplacementOrchestrator:
         indeterminate external state returns a deferred result without consuming a replacement
         attempt or marking the job failed.
         """
+        await self._assert_not_paused()
         token = uuid4().hex
         if not await self._acquire_lease(job_id, token):
             raise ReplacementBusyError("replacement job is already leased by another worker")
@@ -202,8 +211,13 @@ class ReplacementOrchestrator:
                     return ReplacementRunResult(job_id, checkpoint, terminal=True)
                 try:
                     self._assert_not_emergency_stopped()
+                    await self._assert_not_paused()
                     await self._dispatch(job_id, token, checkpoint)
-                except (ReplacementDeferredError, ProviderTransientError, MasterTransientError) as exc:
+                except (
+                    ReplacementDeferredError,
+                    ProviderTransientError,
+                    MasterTransientError,
+                ) as exc:
                     logger.info(
                         "replacement_deferred",
                         extra={"job_id": str(job_id), "checkpoint": checkpoint.value},
@@ -335,7 +349,8 @@ class ReplacementOrchestrator:
                     capacity=capacity,
                 )
             except ProviderTransientError as exc:
-                # The POST outcome may be ambiguous. Never blind-retry here; the next resume searches
+                # The POST outcome may be ambiguous. Never blind-retry here; the next
+                # resume searches provider state first.
                 # the deterministic name first, then observes the reconciliation grace period.
                 raise ReplacementDeferredError(str(exc)) from exc
 
@@ -404,7 +419,10 @@ class ReplacementOrchestrator:
             new_vps.server_type = server.server_type or new_vps.server_type
             self.state_machine.transition(job, ReplacementCheckpoint.CHECKING_IP)
             await self._add_event(
-                session, job, EventType.IP_CHECK_STARTED, "Replacement IP reachability check started"
+                session,
+                job,
+                EventType.IP_CHECK_STARTED,
+                "Replacement IP reachability check started",
             )
             await self._renew_lease_in_session(session, job_id, lease_token)
             await session.commit()
@@ -473,7 +491,11 @@ class ReplacementOrchestrator:
             await self._renew_lease_in_session(session, job_id, lease_token)
             await session.commit()
 
-        if new_vps is not None and provider is not None and new_vps.state is not VpsInstanceState.DELETED:
+        if (
+            new_vps is not None
+            and provider is not None
+            and new_vps.state is not VpsInstanceState.DELETED
+        ):
             adapter = self.provider_manager.get(provider)
             try:
                 await self.provisioning.delete_temporary(adapter, new_vps.provider_server_id)
@@ -617,7 +639,8 @@ class ReplacementOrchestrator:
             raise ReplacementConfigurationError("transitive master nodes are read-only")
         if existing.tls_verify_mode == "mtls":
             raise ReplacementConfigurationError(
-                "mTLS master nodes require certificate deployment support; refusing security downgrade"
+                "mTLS master nodes require certificate deployment support; "
+                "refusing security downgrade"
             )
         if existing.has_api_token and not credential.api_token_ref:
             raise ReplacementConfigurationError(
@@ -1032,7 +1055,8 @@ class ReplacementOrchestrator:
         elif credential.ssh_auth_method is SshAuthMethod.PASSWORD:
             if provider.provider_type is not ProviderType.LINODE:
                 raise ReplacementConfigurationError(
-                    "password SSH bootstrap is currently supported only for Linode; use a public key"
+                    "password SSH bootstrap is currently supported only for Linode; "
+                    "use a public key"
                 )
             root_password = self.secret_resolver.resolve(
                 credential.secret_backend, credential.ssh_secret_ref

@@ -37,8 +37,8 @@ def main() -> int:
         raise SystemExit(f"Patch 04 validation failed; missing files: {missing}")
 
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if version != "0.6.0-master-replacement":
-        raise SystemExit(f"Patch 04 validation failed; unexpected VERSION: {version}")
+    if not version:
+        raise SystemExit("Patch 04 validation failed; VERSION is empty")
 
     settings = Settings(_env_file=None)
     assert settings.dry_run is True
@@ -80,8 +80,12 @@ def main() -> int:
     for table in metadata.sorted_tables:
         str(CreateTable(table).compile(dialect=dialect))
 
-    if sorted(path.name for path in (ROOT / "app" / "bot").glob("*.py")) != ["__init__.py"]:
-        raise SystemExit("Patch 04 validation failed; Telegram Phase 7 was implemented too early")
+    if version == "0.6.0-master-replacement":
+        bot_files = sorted(path.name for path in (ROOT / "app" / "bot").glob("*.py"))
+        if bot_files != ["__init__.py"]:
+            raise SystemExit(
+                "Patch 04 validation failed; Telegram Phase 7 was implemented too early"
+            )
 
     print("Patch 04 validation: PASS")
     print("Phase 6: master client + crash-resumable replacement orchestrator")

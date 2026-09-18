@@ -119,3 +119,8 @@ class EventType(StrEnum):
     OLD_VPS_DELETED = "old_vps_deleted"
     REPLACEMENT_COMPLETED = "replacement_completed"
     REPLACEMENT_FAILED = "replacement_failed"
+    CONTROL_ACTION = "control_action"
+    SETTING_CHANGED = "setting_changed"
+    SYSTEM_PAUSED = "system_paused"
+    SYSTEM_RESUMED = "system_resumed"
+    PROVIDER_UPDATED = "provider_updated"

@@ -9,6 +9,7 @@ from app.database.repositories import NodeRepository, ReplacementJobRepository
 from app.models import ReplacementJobState
 from app.replacement.errors import ReplacementBusyError, ReplacementDeferredError
 from app.replacement.orchestrator import ReplacementOrchestrator
+from app.services.operational_settings import OperationalSettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,8 @@ class ReplacementWorker:
     """Crash-recovery worker for persisted replacement jobs.
 
     Active jobs are always resumed first. Automatic creation of new replacement jobs is disabled in
-    DRY_RUN to avoid repeatedly simulating the same still-failed production node; dry-run jobs can be
+    DRY_RUN to avoid repeatedly simulating the same still-failed production node; dry-run jobs
+    can be
     triggered explicitly through the service/control layer.
     """
 
@@ -34,13 +36,17 @@ class ReplacementWorker:
         database: Database,
         orchestrator: ReplacementOrchestrator,
         settings: Settings,
+        operational_settings: OperationalSettingsService | None = None,
     ) -> None:
         self.database = database
         self.orchestrator = orchestrator
         self.settings = settings
+        self.operational_settings = operational_settings
 
     async def run_cycle(self) -> ReplacementCycleResult:
         if not self.settings.replacement_worker_enabled:
+            return ReplacementCycleResult(0, 0, 0, 0)
+        if self.operational_settings is not None and await self.operational_settings.is_paused():
             return ReplacementCycleResult(0, 0, 0, 0)
 
         resumed = 0
@@ -49,7 +55,8 @@ class ReplacementWorker:
         failed = 0
 
         async with self.database.session() as session:
-            active_ids = tuple(job.id for job in await ReplacementJobRepository(session).list_active())
+            active_jobs = await ReplacementJobRepository(session).list_active()
+            active_ids = tuple(job.id for job in active_jobs)
 
         for job_id in active_ids:
             try:

@@ -1,87 +1,111 @@
 # ASO Node Recovery
 
-Safety-first control plane for on-demand recovery of remote 3X-UI nodes whose public IPs become
-unreachable from Iran.
+Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
+public IP becomes unreachable from Iran.
 
-> Current milestone: **Phase 6 Master + Replacement / Patch 04**.
-> Phases 1-6 are implemented. Telegram control and production hardening remain Phase 7.
+Current release: **1.0.0-production-release** — all seven planned phases are implemented.
 
-## Safety status
+## Core replacement invariant
 
-- `ASO_DRY_RUN=true` remains the default.
-- `ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=false` remains the independent real-mutation guard.
-- `ASO_REPLACEMENT_WORKER_ENABLED=false` keeps automatic replacement opt-in.
-- `ASO_REPLACEMENT_EMERGENCY_STOP=false` can be switched on to defer workflow mutations.
-- Provider create is reconciled by deterministic name before retrying an ambiguous request.
-- Check-Host `INDETERMINATE` is never treated as a bad replacement IP.
-- Generated 3X-UI secrets are persisted as owner-only file references, not plaintext DB columns.
-- The existing Master node is updated by explicit `master_node_id`; IP is never used as identity.
-- The old VPS deletion path is hard-gated by durable IP/deployment/master/final-check evidence.
-- DRY_RUN never marks a real old VPS deleted or promotes a simulated replacement.
-- Permanent spare VPS/IP pools are explicitly out of scope.
+There is no permanent spare VPS/IP pool. A replacement VPS is created only after a node reaches the
+configured failure threshold. The old VPS stays alive until the replacement has passed:
 
-Read [PROJECT_SCOPE.md](PROJECT_SCOPE.md), [docs/REPLACEMENT.md](docs/REPLACEMENT.md),
-[docs/MASTER_3XUI.md](docs/MASTER_3XUI.md), [docs/PROVIDERS.md](docs/PROVIDERS.md),
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/MONITORING.md](docs/MONITORING.md).
+1. provider provisioning,
+2. Iran reachability check,
+3. SSH readiness,
+4. 3X-UI install/config extraction,
+5. node API verification,
+6. Master 3X-UI update,
+7. Master verification,
+8. final Iran health check.
 
-## Requirements
+Only then may the old VPS be deleted.
 
-- Python 3.12+
-- PostgreSQL
-- Docker + Docker Compose (optional for local development)
+## Implemented architecture
 
-## Local development
+- FastAPI health/control process
+- PostgreSQL + SQLAlchemy 2 + Alembic
+- Check-Host monitoring from Iran nodes
+- central Node state machine and persisted replacement state machine
+- Hetzner and Linode provider adapters
+- DRY_RUN + independent real-mutation guard + capacity/cost guards
+- AsyncSSH deployment and isolated 3X-UI installer
+- current 3X-UI Master API integration
+- crash recovery, deterministic provider reconciliation, DB leases and advisory lock
+- Telegram control plane with allow-list and signed destructive confirmations
+- persistent pause/resume
+- audit/event notifications
+- PostgreSQL backup/restore tooling
+- hardened production Docker Compose
+- separated explicitly-authorized production replacement E2E test
+
+## Safety defaults
+
+```env
+ASO_DRY_RUN=true
+ASO_ALLOW_REAL_INFRASTRUCTURE_MUTATION=false
+ASO_REPLACEMENT_WORKER_ENABLED=false
+ASO_WORKER_SCHEDULER_ENABLED=false
+ASO_TELEGRAM_BOT_ENABLED=false
+ASO_ALLOW_DATABASE_RESTORE=false
+```
+
+Installing the release does **not** authorize real VPS creation/deletion or Master mutation.
+
+## Development
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
 cp .env.example .env
+
+pytest
+ruff check .
+ruff format --check .
+python scripts/validate_patch05.py
+python -m compileall -q app tests scripts migrations
+alembic upgrade head --sql > migration.sql
+```
+
+Development API:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-Health endpoint: `GET /health`
+Health endpoint: `GET /health`.
 
-Current version:
+## Database
 
-```text
-0.6.0-master-replacement
-```
-
-## Implemented phases
-
-- **Phase 1:** application/config/logging/testing/Docker foundation.
-- **Phase 2:** PostgreSQL registry, models, constraints, repositories, Alembic.
-- **Phase 3:** Iran-scoped Check-Host monitoring, thresholds, leases, events, scheduler adapter.
-- **Phase 4:** provider-neutral provisioning, Hetzner/Linode adapters, cost guards, DRY_RUN.
-- **Phase 5:** AsyncSSH, bootstrap, isolated 3X-UI installer, verification, resumable deployment.
-- **Phase 6:** current 3X-UI master adapter, durable replacement checkpoints, provider reconciliation,
-  bounded bad-IP retry, master rollback, job/global locks, emergency stop, crash recovery, and hard
-  old-VPS protection.
-
-## Database migration
-
-Patch 04 adds a second migration for replacement/master persistence:
+Apply all migrations before starting worker/bot processes:
 
 ```bash
 alembic upgrade head
 ```
 
-Current head: `20260917_0002`.
+Current Alembic head: `20260917_0003`.
 
-## Validation
+## Production
+
+See:
+
+- [Production deployment](docs/PRODUCTION.md)
+- [Telegram control](docs/TELEGRAM.md)
+- [Backup/restore](docs/BACKUP_RESTORE.md)
+- [Security controls](docs/SECURITY.md)
+- [Release checklist](docs/RELEASE.md)
+- [Replacement workflow](docs/REPLACEMENT.md)
+- [Master 3X-UI](docs/MASTER_3XUI.md)
+
+Start the hardened stack only after `.env` is populated:
 
 ```bash
-ruff check .
-ruff format --check .
-pytest
-python scripts/validate_patch04.py
-python -m compileall -q app tests scripts migrations
-alembic upgrade head --sql > migration.sql
+docker compose -f docker-compose.prod.yml up -d postgres
+docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d api worker
+docker compose -f docker-compose.prod.yml --profile telegram up -d bot
 ```
 
-## Production boundary
-
-Phase 7 still owns Telegram administration, production scheduler wiring, backup/restore drills,
-container hardening/resource limits, security review, production E2E authorization, and release.
-No real production replacement should be enabled merely because Patch 04 is present.
+Keep real-infrastructure guards disabled through initial monitoring, Telegram, backup, restore-drill,
+and DRY_RUN verification.

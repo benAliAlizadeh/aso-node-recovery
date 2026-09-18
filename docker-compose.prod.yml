@@ -1,0 +1,95 @@
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: docker/prod.Dockerfile
+  env_file:
+    - .env
+  environment:
+    ASO_ENVIRONMENT: production
+    ASO_DATABASE_URL: ${ASO_DATABASE_URL:?set ASO_DATABASE_URL}
+    ASO_RUNTIME_SECRET_DIR: /var/lib/aso/secrets
+    ASO_BACKUP_DIR: /var/lib/aso/backups
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  cpus: 1.0
+  mem_limit: 512m
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+  volumes:
+    - aso_runtime_secrets:/var/lib/aso/secrets
+    - aso_backups:/var/lib/aso/backups
+
+services:
+  api:
+    <<: *app-common
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    ports:
+      - "127.0.0.1:${ASO_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    <<: *app-common
+    command: ["python", "-m", "app.workers.runner"]
+
+  bot:
+    <<: *app-common
+    command: ["python", "-m", "app.bot.runner"]
+    profiles: ["telegram"]
+
+  backup:
+    <<: *app-common
+    command: ["python", "scripts/backup_db.py"]
+    restart: "no"
+    profiles: ["ops"]
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aso}
+      POSTGRES_USER: ${POSTGRES_USER:-aso}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - aso_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aso} -d ${POSTGRES_DB:-aso}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    pids_limit: 256
+    cpus: 1.5
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  aso_postgres_data:
+  aso_runtime_secrets:
+  aso_backups:

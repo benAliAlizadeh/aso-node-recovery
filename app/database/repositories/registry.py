@@ -25,6 +25,9 @@ class ProviderRepository(SqlAlchemyRepository[Provider]):
     async def get_by_key(self, key: str) -> Provider | None:
         return await self.session.scalar(select(Provider).where(Provider.key == key))
 
+    async def list_all(self) -> list[Provider]:
+        return list((await self.session.scalars(select(Provider).order_by(Provider.key))).all())
+
 
 class NodeRepository(SqlAlchemyRepository[Node]):
     model = Node
@@ -40,6 +43,21 @@ class NodeRepository(SqlAlchemyRepository[Node]):
 
         query = select(Node).where(Node._state == NodeState.FAILED).order_by(Node.name).limit(limit)
         return list((await self.session.scalars(query)).all())
+
+    async def list_all(self, *, limit: int = 200) -> list[Node]:
+        query = select(Node).order_by(Node.name).limit(limit)
+        return list((await self.session.scalars(query)).all())
+
+    async def get_by_name(self, name: str) -> Node | None:
+        return await self.session.scalar(select(Node).where(func.lower(Node.name) == name.lower()))
+
+    async def count_by_state(self) -> dict[str, int]:
+        rows = (
+            await self.session.execute(
+                select(Node._state, func.count()).group_by(Node._state)
+            )
+        ).all()
+        return {state.value: int(count) for state, count in rows}
 
     async def try_acquire_monitoring_lease(
         self,
@@ -126,6 +144,10 @@ class ReplacementJobRepository(SqlAlchemyRepository[ReplacementJob]):
             .limit(1)
         )
 
+    async def list_recent(self, *, limit: int = 20) -> list[ReplacementJob]:
+        query = select(ReplacementJob).order_by(ReplacementJob.created_at.desc()).limit(limit)
+        return list((await self.session.scalars(query)).all())
+
     async def try_acquire_workflow_lease(
         self,
         job_id: UUID,
@@ -188,6 +210,16 @@ class VpsInstanceRepository(SqlAlchemyRepository[VpsInstance]):
         )
         return int(value or 0)
 
+    async def count_active(self) -> int:
+        from app.models import VpsInstanceState
+
+        value = await self.session.scalar(
+            select(func.count()).select_from(VpsInstance).where(
+                VpsInstance.state != VpsInstanceState.DELETED
+            )
+        )
+        return int(value or 0)
+
     async def get_by_provider_identity(
         self, provider_id: UUID, provider_server_id: str
     ) -> VpsInstance | None:
@@ -231,9 +263,51 @@ class EventRepository(SqlAlchemyRepository[Event]):
         )
         return list((await self.session.scalars(query)).all())
 
+    async def list_recent(self, *, limit: int = 50) -> list[Event]:
+        query = select(Event).order_by(Event.created_at.desc(), Event.id.desc()).limit(limit)
+        return list((await self.session.scalars(query)).all())
+
+    async def list_after(
+        self,
+        created_at: datetime | None,
+        event_id: UUID | None,
+        *,
+        limit: int = 100,
+    ) -> list[Event]:
+        query = select(Event)
+        if created_at is not None:
+            if event_id is None:
+                query = query.where(Event.created_at > created_at)
+            else:
+                query = query.where(
+                    or_(
+                        Event.created_at > created_at,
+                        and_(Event.created_at == created_at, Event.id > event_id),
+                    )
+                )
+        query = query.order_by(Event.created_at, Event.id).limit(limit)
+        return list((await self.session.scalars(query)).all())
+
 
 class SettingRepository(SqlAlchemyRepository[SystemSetting]):
     model = SystemSetting
 
     async def get_by_key(self, key: str) -> SystemSetting | None:
         return await self.session.scalar(select(SystemSetting).where(SystemSetting.key == key))
+
+    async def set_value(
+        self,
+        key: str,
+        value: object,
+        *,
+        description: str | None = None,
+    ) -> SystemSetting:
+        setting = await self.get_by_key(key)
+        if setting is None:
+            setting = SystemSetting(key=key, value=value, description=description)
+            return await self.add(setting)
+        setting.value = value
+        if description is not None:
+            setting.description = description
+        await self.session.flush()
+        return setting

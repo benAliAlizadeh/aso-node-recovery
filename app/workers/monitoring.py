@@ -12,6 +12,7 @@ from app.models import Event, EventSeverity, EventType, NodeCheck, NodeCheckOutc
 from app.monitoring.check_host import CheckHostClient, CheckHostError
 from app.monitoring.health import MonitoringPolicy, NodeHealthCalculator, ReachabilityEvaluator
 from app.monitoring.types import CheckHostSummary, ReachabilityDecision
+from app.services.operational_settings import OperationalSettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,12 @@ class MonitoringWorker:
         database: Database,
         check_host: CheckHostClient,
         settings: Settings,
+        operational_settings: OperationalSettingsService | None = None,
     ) -> None:
         self.database = database
         self.check_host = check_host
         self.settings = settings
+        self.operational_settings = operational_settings
         self.policy = MonitoringPolicy(
             failure_threshold=settings.failure_threshold,
             recovery_threshold=settings.recovery_threshold,
@@ -44,6 +47,9 @@ class MonitoringWorker:
         self.health_calculator = NodeHealthCalculator(self.policy)
 
     async def run_cycle(self) -> MonitoringCycleResult:
+        if self.operational_settings is not None and await self.operational_settings.is_paused():
+            return MonitoringCycleResult(0, 0, 0, 0)
+
         async with self.database.session() as session:
             nodes = await NodeRepository(session).list_monitoring_enabled()
             node_ids = tuple(node.id for node in nodes)
@@ -75,6 +81,9 @@ class MonitoringWorker:
         return MonitoringCycleResult(len(node_ids), checked, skipped, errors)
 
     async def run_node(self, node_id: UUID, *, check_nodes: tuple[str, ...] | None = None) -> str:
+        if self.operational_settings is not None and await self.operational_settings.is_paused():
+            return "skipped"
+
         now = datetime.now(UTC)
         lease_token = uuid4().hex
         lease_until = now + timedelta(seconds=self.settings.monitoring_lease_seconds)

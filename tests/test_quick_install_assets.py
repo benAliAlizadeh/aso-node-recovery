@@ -31,9 +31,9 @@ def test_asoctl_stop_never_removes_named_volumes() -> None:
 
 
 def test_quick_install_release_version_is_consistent() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.4-runtime-volume-capability-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() == "1.0.5-postgres-auth-hotfix"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert 'version = "1.0.4"' in pyproject
+    assert 'version = "1.0.5"' in pyproject
     assert (ROOT / "docs" / "QUICK_INSTALL.md").is_file()
     assert (ROOT / "install.sh").is_file()
     assert (ROOT / "asoctl").is_file()
@@ -57,3 +57,23 @@ def test_quick_installer_runs_runtime_volume_initializer_before_migrations() -> 
     migration_pos = text.index("compose run --rm api alembic upgrade head")
     review_pos = text.index("compose run --rm api python scripts/security_review.py")
     assert init_pos < migration_pos < review_pos
+
+
+def test_quick_installer_reconciles_existing_postgres_password_before_migrations() -> None:
+    text = (ROOT / "scripts" / "quick_install.sh").read_text()
+    start_pos = text.index('compose up -d postgres')
+    wait_pos = text.index('wait_for_postgres', start_pos)
+    reconcile_pos = text.index('reconcile_postgres_password', start_pos)
+    migration_pos = text.index('compose run --rm api alembic upgrade head')
+    assert start_pos < wait_pos < reconcile_pos < migration_pos
+    assert 'ALTER ROLE %I WITH PASSWORD %L' in text
+    assert '\\getenv aso_target_password POSTGRES_PASSWORD' in text
+    assert 'postgres_password_matches_env' in text
+    assert 'The database volume was NOT deleted.' in text
+
+
+def test_compose_ignores_exported_database_variables() -> None:
+    text = (ROOT / "scripts" / "quick_install.sh").read_text()
+    compose_block = text[text.index('compose() {'):text.index('wait_for_postgres() {')]
+    for key in ('POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'ASO_DATABASE_URL'):
+        assert f'-u {key}' in compose_block

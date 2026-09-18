@@ -247,7 +247,72 @@ configure_env() {
 }
 
 compose() {
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  # Compose gives exported host variables precedence over --env-file values.
+  # Strip the database credential variables so the installer's protected .env
+  # is the single source of truth even when invoked through `sudo -E`.
+  env \
+    -u POSTGRES_DB \
+    -u POSTGRES_USER \
+    -u POSTGRES_PASSWORD \
+    -u ASO_DATABASE_URL \
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+wait_for_postgres() {
+  local pg_user pg_db i
+  pg_user="$(get_env POSTGRES_USER)"
+  pg_db="$(get_env POSTGRES_DB)"
+
+  for i in $(seq 1 60); do
+    if compose exec -T postgres pg_isready -U "$pg_user" -d "$pg_db" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  compose logs --tail=100 postgres || true
+  die "PostgreSQL did not become ready"
+}
+
+postgres_password_matches_env() {
+  compose exec -T postgres sh -ec '
+    PGPASSWORD="$POSTGRES_PASSWORD" \
+      psql -X -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+      -v ON_ERROR_STOP=1 -Atqc "SELECT 1"
+  ' 2>/dev/null | grep -qx '1'
+}
+
+reconcile_postgres_password() {
+  local pg_user pg_db
+  pg_user="$(get_env POSTGRES_USER)"
+  pg_db="$(get_env POSTGRES_DB)"
+
+  [[ "$pg_user" == "aso" && "$pg_db" == "aso" ]] || \
+    die "Quick installer expects POSTGRES_USER=aso and POSTGRES_DB=aso"
+
+  if postgres_password_matches_env; then
+    log "PostgreSQL application credentials verified."
+    return 0
+  fi
+
+  warn "PostgreSQL volume password differs from the protected .env; synchronizing the ASO role password without deleting data."
+
+  # The official PostgreSQL image uses local socket trust for the initialized
+  # cluster. Read the target password from the container's own environment via
+  # psql \getenv, so the secret is never placed in SQL text or process args.
+  if ! printf '%s\n' \
+      '\getenv aso_target_password POSTGRES_PASSWORD' \
+      "SELECT format('ALTER ROLE %I WITH PASSWORD %L', current_user, :'aso_target_password') \gexec" \
+      | compose exec -T -u postgres postgres \
+          psql -X -v ON_ERROR_STOP=1 -U "$pg_user" -d "$pg_db" >/dev/null; then
+    die "Could not synchronize PostgreSQL credentials. The database volume was NOT deleted."
+  fi
+
+  if ! postgres_password_matches_env; then
+    die "PostgreSQL credential verification still failed after synchronization. The database volume was NOT deleted."
+  fi
+
+  log "PostgreSQL application credentials synchronized and verified."
 }
 
 wait_for_health() {
@@ -277,6 +342,8 @@ install_stack() {
 
   log "Starting PostgreSQL."
   compose up -d postgres
+  wait_for_postgres
+  reconcile_postgres_password
 
   log "Securing persistent runtime secret and backup volumes."
   compose run --rm --no-deps runtime-init

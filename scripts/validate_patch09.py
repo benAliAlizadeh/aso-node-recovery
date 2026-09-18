@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    assert (ROOT / "VERSION").read_text().strip() == "1.0.4-runtime-volume-capability-hotfix"
+    assert (ROOT / "VERSION").read_text().strip() == "1.0.5-postgres-auth-hotfix"
     compose = (ROOT / "docker-compose.prod.yml").read_text()
     dockerfile = (ROOT / "docker" / "prod.Dockerfile").read_text()
 

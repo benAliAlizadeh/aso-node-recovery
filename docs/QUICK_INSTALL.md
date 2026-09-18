@@ -87,3 +87,12 @@ The installer initializes the persistent runtime secret and backup Docker volume
 permissions before migrations or the production security review run. This prevents Docker's default
 named-volume root directory permissions from blocking startup or exposing runtime secret metadata.
 The application services never run this initialization as an unrestricted long-lived root process.
+
+## Existing PostgreSQL volume credentials
+
+The installer treats the protected `.env` as the source of truth for the ASO PostgreSQL password.
+Before Alembic runs, it performs a real authenticated TCP connection check. If an existing ASO named
+volume was initialized with an older password, the installer updates only the `aso` database role
+password through the container-local PostgreSQL socket and verifies the new credential. It never
+deletes or recreates the PostgreSQL volume to repair a password mismatch. Exported host database
+variables are also ignored during Compose calls so `sudo -E` cannot silently override `.env`.

@@ -13,4 +13,4 @@ def test_health_wait_is_bounded_and_proxy_safe() -> None:
 
 
 def test_release_version() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() in {"1.0.7-health-readiness-hotfix", "1.1.0-smart-onboarding", "1.2.0-telegram-registry-ui", "1.3.0-api-health-center", "1.4.0-runtime-controls", "1.5.0-force-repair-hardening", "1.5.1-host-health-fallback", "1.5.2-master-auto-routing", "1.5.3-safe-upgrade", "1.5.4-master-firewall-guard", "1.5.4-network-ssh-trust", "1.5.5-upgrade-validator-ssh-trust"}
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() in {"1.0.7-health-readiness-hotfix", "1.1.0-smart-onboarding", "1.2.0-telegram-registry-ui", "1.3.0-api-health-center", "1.4.0-runtime-controls", "1.5.0-force-repair-hardening", "1.5.1-host-health-fallback", "1.5.2-master-auto-routing", "1.5.3-safe-upgrade", "1.5.4-master-firewall-guard", "1.5.4-network-ssh-trust", "1.5.5-upgrade-validator-ssh-trust", "1.5.6-ssh-pinned-trust"}

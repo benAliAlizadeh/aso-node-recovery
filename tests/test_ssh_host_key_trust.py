@@ -28,9 +28,16 @@ class FakeAsyncSsh:
         self.key = key
         self.calls: list[tuple[str, int]] = []
 
-    async def get_server_host_key(self, host: str, *, port: int, connect_timeout: float):
+    async def get_server_host_key(
+        self, host: str, *, port: int, connect_timeout: float, config=None
+    ):
         self.calls.append((host, port))
         assert connect_timeout > 0
+        assert config is None
+        return self.key
+
+    def import_public_key(self, data: str):
+        assert data.startswith("ssh-ed25519 ")
         return self.key
 
 

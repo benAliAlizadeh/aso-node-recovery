@@ -207,3 +207,10 @@ and DRY_RUN verification.
 ### In-place validation and SSH trust
 
 `./asoctl upgrade` validates the checked-out source through a read-only bind mount, so production images remain lean and do not need `tests/` copied into `/app`. If an SSH credential check encounters an untrusted host key, Telegram shows the observed SHA256 fingerprint and requires explicit confirmation before retrying with strict host-key verification still enabled.
+
+### SSH host-key confirmation hardening
+
+ASO now enforces explicitly confirmed SSH SHA256 host-key fingerprints directly at runtime. The
+managed `known_hosts` file remains persistent, but SSH command execution pins the presented key to
+that confirmed fingerprint instead of depending on ambient host matching behavior. Unknown or
+changed keys still require an explicit Telegram/CLI confirmation and are never auto-accepted.

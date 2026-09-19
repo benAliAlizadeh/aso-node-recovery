@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import importlib
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.core.errors import ConfigurationError
+from app.deployment.host_keys import load_trusted_host_key_fingerprint
 from app.deployment.types import CommandResult, SshConnectionSpec
 from app.models.enums import SshAuthMethod
 
@@ -15,8 +17,25 @@ class RemoteCommandExecutor(Protocol):
     ) -> CommandResult: ...
 
 
+def _pinned_client_factory(asyncssh: Any, expected_fingerprint: str):
+    class PinnedHostKeyClient(asyncssh.SSHClient):
+        def validate_host_public_key(self, host: str, addr: str, port: int, key: Any) -> bool:
+            del host, addr, port
+            try:
+                actual = str(key.get_fingerprint("sha256"))
+            except Exception:
+                return False
+            return hmac.compare_digest(actual, expected_fingerprint)
+
+        def validate_host_ca_key(self, host: str, addr: str, port: int, key: Any) -> bool:
+            del host, addr, port, key
+            return False
+
+    return PinnedHostKeyClient
+
+
 class AsyncSshCommandExecutor:
-    """AsyncSSH-backed command execution with no stdout/stderr logging."""
+    """AsyncSSH-backed command execution with strict ASO-managed host-key pinning."""
 
     async def run(
         self, spec: SshConnectionSpec, command: str, *, timeout_seconds: float | None = None
@@ -26,12 +45,30 @@ class AsyncSshCommandExecutor:
             "host": spec.host,
             "port": spec.port,
             "username": spec.username,
+            # Do not allow a host-level ~/.ssh/config to silently change the
+            # target or trust semantics of the containerized ASO runtime.
+            "config": None,
         }
         if spec.verify_host_key:
-            # None lets AsyncSSH use its normal known_hosts behavior. A custom file can be supplied
-            # for newly provisioned hosts once a trusted key has been seeded.
             if spec.known_hosts is not None:
-                options["known_hosts"] = spec.known_hosts
+                pinned_fingerprint = load_trusted_host_key_fingerprint(
+                    spec.known_hosts,
+                    spec.host,
+                    spec.port,
+                    asyncssh_module=asyncssh,
+                )
+                if pinned_fingerprint:
+                    # Keep host-key verification enabled, but validate the
+                    # presented server key against ASO's explicitly confirmed
+                    # SHA256 fingerprint instead of relying on ambient
+                    # known_hosts matching behavior.
+                    options["known_hosts"] = ((), (), (), (), (), (), ())
+                    options["client_factory"] = _pinned_client_factory(
+                        asyncssh, pinned_fingerprint
+                    )
+                    options["server_host_key_algs"] = "default"
+                else:
+                    options["known_hosts"] = spec.known_hosts
         else:
             options["known_hosts"] = None
 

@@ -6,6 +6,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app.core.errors import ConfigurationError
 
@@ -17,6 +18,65 @@ class SshHostKeyCandidate:
     algorithm: str
     fingerprint: str
     known_hosts_entry: str
+
+
+def _host_token(host: str, port: int) -> str:
+    return host if port == 22 else f"[{host}]:{port}"
+
+
+def load_trusted_host_key_fingerprint(
+    known_hosts_path: str,
+    host: str,
+    port: int,
+    *,
+    asyncssh_module: Any | None = None,
+) -> str | None:
+    """Return the fingerprint explicitly trusted by ASO for host:port.
+
+    ASO writes exact host entries to its managed known_hosts file. Reading the
+    fingerprint ourselves lets the runtime pin the presented key directly,
+    avoiding environment-specific OpenSSH/AsyncSSH known_hosts matching quirks
+    without weakening host-key verification.
+    """
+
+    path = Path(known_hosts_path).expanduser()
+    if not path.exists():
+        return None
+
+    token = _host_token(host.strip(), port)
+    fingerprints: set[str] = set()
+    asyncssh = asyncssh_module or importlib.import_module("asyncssh")
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ConfigurationError("SSH known_hosts file cannot be read") from exc
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("@"):
+            continue
+        try:
+            host_field, key_data = line.split(None, 1)
+        except ValueError:
+            continue
+        if token not in host_field.split(","):
+            continue
+        try:
+            key = asyncssh.import_public_key(key_data)
+            fingerprints.add(str(key.get_fingerprint("sha256")))
+        except Exception as exc:
+            raise ConfigurationError(
+                f"stored SSH host key for {host}:{port} cannot be parsed"
+            ) from exc
+
+    if not fingerprints:
+        return None
+    if len(fingerprints) != 1:
+        raise ConfigurationError(
+            f"multiple conflicting SSH host keys are stored for {host}:{port}"
+        )
+    return next(iter(fingerprints))
 
 
 class AsyncSshHostKeyTrustService:
@@ -40,6 +100,7 @@ class AsyncSshHostKeyTrustService:
                     host,
                     port=port,
                     connect_timeout=self.timeout_seconds,
+                    config=None,
                 ),
                 timeout=self.timeout_seconds + 1.0,
             )
@@ -54,7 +115,7 @@ class AsyncSshHostKeyTrustService:
         algorithm = key.algorithm.decode("ascii") if isinstance(key.algorithm, bytes) else str(key.algorithm)
         fingerprint = str(key.get_fingerprint("sha256"))
         exported = key.export_public_key("openssh").decode("ascii").strip()
-        host_token = host if port == 22 else f"[{host}]:{port}"
+        host_token = _host_token(host, port)
         return SshHostKeyCandidate(
             host=host,
             port=port,
@@ -87,7 +148,7 @@ class AsyncSshHostKeyTrustService:
         except OSError as exc:
             raise ConfigurationError("SSH known_hosts directory cannot be secured") from exc
 
-        host_token = candidate.host if candidate.port == 22 else f"[{candidate.host}]:{candidate.port}"
+        host_token = _host_token(candidate.host, candidate.port)
         existing: list[str] = []
         if self.path.exists():
             try:

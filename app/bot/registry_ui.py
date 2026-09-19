@@ -120,7 +120,27 @@ class TelegramRegistryController:
                 await self._node_auth_selected(query, context, data.rsplit(".", 1)[1])
                 return
             if data == "r.nac":
-                await self._commit_node_add(query, context)
+                try:
+                    await self._commit_node_add(query, context)
+                except Exception as exc:
+                    wizard = context.user_data.get(_WIZARD_KEY)
+                    if (
+                        self._is_untrusted_ssh_host_key_error(exc)
+                        and isinstance(wizard, dict)
+                        and wizard.get("stage") == "node_confirm"
+                        and wizard.get("provider_ipv4")
+                        and wizard.get("ssh_port")
+                    ):
+                        await self._request_ssh_host_key_confirmation(
+                            update,
+                            context,
+                            user_id,
+                            host=str(wizard["provider_ipv4"]),
+                            port=int(wizard["ssh_port"]),
+                            resume_stage="node_confirm",
+                        )
+                        return
+                    raise
                 return
             if data.startswith("r.nsa."):
                 await self._node_ssh_edit_auth_selected(query, context, data)
@@ -156,10 +176,17 @@ class TelegramRegistryController:
                 resume_stage = wizard.pop("host_key_resume_stage")
                 wizard["stage"] = resume_stage
                 wizard.pop("host_key_confirmation_id", None)
+                retry_markup = None
+                if resume_stage == "node_confirm":
+                    retry_markup = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("✅ Retry Save Node", callback_data="r.nac"),
+                        InlineKeyboardButton("❌ Cancel", callback_data="r.cancel"),
+                    ]])
                 await query.edit_message_text(
                     "✅ SSH host key trusted.\n"
                     f"{candidate.algorithm} · {candidate.fingerprint}\n\n"
-                    + self._ssh_secret_prompt(resume_stage)
+                    + self._ssh_secret_prompt(resume_stage),
+                    reply_markup=retry_markup,
                 )
                 return
             if action == "px":
@@ -534,6 +561,7 @@ class TelegramRegistryController:
             "node_ssh_secret": "Send the SSH password. I will validate it and delete the message.",
             "node_ssh_edit_public_key": "Send the matching SSH public key.",
             "node_ssh_edit_secret": "Send the new SSH password/private key. It will be validated and the message deleted.",
+            "node_confirm": "The saved SSH fingerprint will be enforced. Retry saving the node.",
         }.get(stage, "Continue the SSH credential setup.")
 
     async def _provider_action(self, query: Any, context: ContextTypes.DEFAULT_TYPE, user_id: int, data: str) -> None:

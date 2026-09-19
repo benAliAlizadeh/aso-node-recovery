@@ -1,6 +1,7 @@
 from app.control.service import (
     ControlService,
     DashboardSnapshot,
+    EventNotificationContext,
     EventSnapshot,
     JobSnapshot,
     NodeDetailSnapshot,
@@ -11,6 +12,7 @@ from app.control.service import (
 __all__ = [
     "ControlService",
     "DashboardSnapshot",
+    "EventNotificationContext",
     "EventSnapshot",
     "JobSnapshot",
     "NodeDetailSnapshot",

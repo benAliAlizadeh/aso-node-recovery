@@ -104,7 +104,26 @@ class EventSnapshot:
     event_type: EventType
     severity: EventSeverity
     message: str
+    payload: dict[str, Any] | None
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EventNotificationContext:
+    node_id: UUID | None = None
+    node_name: str | None = None
+    provider_name: str | None = None
+    provider_type: str | None = None
+    vps_host: str | None = None
+    target_host: str | None = None
+    target_port: int | None = None
+    state: NodeState | None = None
+    operation_mode: NodeOperationMode | None = None
+    consecutive_failures: int | None = None
+    consecutive_successes: int | None = None
+    replacement_job_id: UUID | None = None
+    trigger_mode: ReplacementTriggerMode | None = None
+    is_dry_run: bool | None = None
 
 
 class ControlService:
@@ -275,6 +294,65 @@ class ControlService:
 
     async def advance_event_cursor(self, event: EventSnapshot) -> None:
         await self.operational_settings.set_event_cursor(event.created_at, event.id)
+
+    async def event_notification_context(
+        self, event: EventSnapshot
+    ) -> EventNotificationContext:
+        """Resolve safe, non-secret context for one Telegram audit notification."""
+        node_id = event.node_id
+        replacement_job = None
+        async with self.database.session() as session:
+            if event.replacement_job_id is not None:
+                replacement_job = await ReplacementJobRepository(session).get(
+                    event.replacement_job_id
+                )
+                if node_id is None and replacement_job is not None:
+                    node_id = replacement_job.node_id
+
+            if node_id is None:
+                return EventNotificationContext(
+                    replacement_job_id=event.replacement_job_id,
+                    trigger_mode=(
+                        replacement_job.trigger_mode if replacement_job is not None else None
+                    ),
+                    is_dry_run=(
+                        replacement_job.is_dry_run if replacement_job is not None else None
+                    ),
+                )
+
+            node = await NodeRepository(session).get(node_id)
+            if node is None:
+                return EventNotificationContext(
+                    node_id=node_id,
+                    replacement_job_id=event.replacement_job_id,
+                    trigger_mode=(
+                        replacement_job.trigger_mode if replacement_job is not None else None
+                    ),
+                    is_dry_run=(
+                        replacement_job.is_dry_run if replacement_job is not None else None
+                    ),
+                )
+
+            provider = await ProviderRepository(session).get(node.provider_id)
+            current_vps = await VpsInstanceRepository(session).get_current_for_node(node.id)
+            return EventNotificationContext(
+                node_id=node.id,
+                node_name=node.name,
+                provider_name=provider.display_name if provider is not None else None,
+                provider_type=provider.provider_type.value if provider is not None else None,
+                vps_host=current_vps.host if current_vps is not None else None,
+                target_host=node.current_host,
+                target_port=node.current_port,
+                state=node.state,
+                operation_mode=node.operation_mode or NodeOperationMode.MONITOR_ONLY,
+                consecutive_failures=node.consecutive_failures,
+                consecutive_successes=node.consecutive_successes,
+                replacement_job_id=event.replacement_job_id,
+                trigger_mode=(
+                    replacement_job.trigger_mode if replacement_job is not None else None
+                ),
+                is_dry_run=(replacement_job.is_dry_run if replacement_job is not None else None),
+            )
 
     async def list_providers(self) -> list[ProviderSnapshot]:
         async with self.database.session() as session:
@@ -482,5 +560,6 @@ class ControlService:
             event_type=event.event_type,
             severity=event.severity,
             message=event.message,
+            payload=event.payload,
             created_at=event.created_at,
         )

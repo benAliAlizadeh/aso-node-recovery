@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.5.5-upgrade-validator-ssh-trust** — in-place validation fix plus resilient SSH host-key trust onboarding.
+Current release: **1.5.8-node-event-notifications** — context-rich Telegram node/replacement alerts.
 
 ## Core replacement invariant
 
@@ -36,6 +36,7 @@ Only then may the old VPS be deleted.
 - persistent pause/resume
 - signed/idempotent Force Repair that bypasses only the initial FAILED-state admission check
 - audit/event notifications
+- context-rich Telegram node/replacement notifications with node/provider/VPS identity
 - PostgreSQL backup/restore tooling
 - hardened production Docker Compose
 - separated explicitly-authorized production replacement E2E test

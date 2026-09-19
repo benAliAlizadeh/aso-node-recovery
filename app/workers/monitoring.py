@@ -177,6 +177,13 @@ class MonitoringWorker:
                             "success_count": summary.success_count,
                             "failure_count": summary.failure_count,
                             "total_nodes": summary.total_nodes,
+                            "previous_state": result.previous_state.value,
+                            "current_state": result.current_state.value,
+                            "consecutive_failures": node.consecutive_failures,
+                            "consecutive_successes": node.consecutive_successes,
+                            "operation_mode": (
+                                node.operation_mode.value if node.operation_mode is not None else None
+                            ),
                         },
                         created_at=timestamp,
                     )

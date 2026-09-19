@@ -42,8 +42,11 @@ available so an operator can safely cancel a pre-master-switch job.
 ## Notifications
 
 When `ASO_TELEGRAM_NOTIFICATION_CHAT_ID` is set, the bot polls the append-only event log and sends
-notifications for node failures/recoveries and replacement lifecycle events. The notification cursor
-is persisted in the settings table so bot restarts do not intentionally replay the entire audit log.
+notifications for node failures/recoveries and replacement lifecycle events. Node-scoped alerts include
+the Node name/short ID, Provider, current VPS IP/host, monitoring target, state/mode, and relevant
+failure/recovery counters. Replacement alerts additionally include the short Job ID, trigger type, and
+DRY RUN/LIVE execution mode. No secret values are included. The notification cursor is persisted in
+the settings table so bot restarts do not intentionally replay the entire audit log.
 
 ## Inline Node and Provider management
 

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -100,6 +101,12 @@ class Settings(BaseSettings):
     ssh_known_hosts_path: str | None = None
     three_xui_version: str | None = None
     three_xui_verify_tls: bool = True
+
+    @property
+    def effective_ssh_known_hosts_path(self) -> str:
+        if self.ssh_known_hosts_path:
+            return str(Path(self.ssh_known_hosts_path).expanduser())
+        return str(Path(self.runtime_secret_dir).expanduser() / "known_hosts")
 
     @model_validator(mode="after")
     def validate_configuration(self) -> "Settings":

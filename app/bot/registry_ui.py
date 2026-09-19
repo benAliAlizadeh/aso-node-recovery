@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import SecretStr
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -36,7 +36,7 @@ class TelegramRegistryController:
     def register(self, application: Application) -> None:
         application.add_handler(CallbackQueryHandler(self.callback, pattern=r"^r\."), group=1)
         application.add_handler(
-            CallbackQueryHandler(self.signed_callback, pattern=r"^(px|nx|pc|nc|sc)\."),
+            CallbackQueryHandler(self.signed_callback, pattern=r"^(px|nx|pc|nc|sc|hk)\."),
             group=1,
         )
         application.add_handler(
@@ -143,6 +143,25 @@ class TelegramRegistryController:
             action = verified.action
             entity_id = verified.entity_id
             wizard = context.user_data.get(_WIZARD_KEY, {})
+            if action == "hk":
+                if not isinstance(wizard, dict) or wizard.get("stage") != "ssh_host_key_confirm":
+                    raise ValueError("SSH host-key confirmation session expired")
+                if wizard.get("host_key_confirmation_id") != str(entity_id):
+                    raise ValueError("SSH host-key confirmation does not match this session")
+                candidate = await self.service.trust_ssh_host_key(
+                    host=wizard["ssh_host"],
+                    port=int(wizard["ssh_port"]),
+                    expected_fingerprint=wizard["ssh_host_key_fingerprint"],
+                )
+                resume_stage = wizard.pop("host_key_resume_stage")
+                wizard["stage"] = resume_stage
+                wizard.pop("host_key_confirmation_id", None)
+                await query.edit_message_text(
+                    "✅ SSH host key trusted.\n"
+                    f"{candidate.algorithm} · {candidate.fingerprint}\n\n"
+                    + self._ssh_secret_prompt(resume_stage)
+                )
+                return
             if action == "px":
                 await self.service.remove_provider_from_registry(entity_id)
                 await query.edit_message_text("Provider removed from ASO registry only. No VPS was touched.")
@@ -301,16 +320,17 @@ class TelegramRegistryController:
                 if not 1 <= port <= 65535:
                     raise ValueError("SSH port must be between 1 and 65535")
                 wizard["ssh_port"] = port
-                if wizard["ssh_auth_method"] == SshAuthMethod.PRIVATE_KEY.value:
-                    wizard["stage"] = "node_ssh_public_key"
-                    await update.effective_message.reply_text(
-                        "Send the matching SSH public key used for provisioning replacement VPSs."
-                    )
-                else:
-                    wizard["stage"] = "node_ssh_secret"
-                    await update.effective_message.reply_text(
-                        "Send the SSH password. I will validate it and delete the message."
-                    )
+                resume_stage = (
+                    "node_ssh_public_key"
+                    if wizard["ssh_auth_method"] == SshAuthMethod.PRIVATE_KEY.value
+                    else "node_ssh_secret"
+                )
+                await self._request_ssh_host_key_confirmation(
+                    update, context, user_id,
+                    host=wizard["provider_ipv4"],
+                    port=port,
+                    resume_stage=resume_stage,
+                )
                 return
             if stage == "node_ssh_public_key":
                 if not text.startswith("ssh-"):
@@ -379,12 +399,20 @@ class TelegramRegistryController:
                 if not 1 <= port <= 65535:
                     raise ValueError("SSH port must be between 1 and 65535")
                 wizard["ssh_port"] = port
-                if wizard["ssh_auth_method"] == SshAuthMethod.PRIVATE_KEY.value:
-                    wizard["stage"] = "node_ssh_edit_public_key"
-                    await update.effective_message.reply_text("Send the matching SSH public key.")
-                else:
-                    wizard["stage"] = "node_ssh_edit_secret"
-                    await update.effective_message.reply_text("Send the new SSH password.")
+                node = await self.service.get_node(UUID(wizard["entity_id"]))
+                if node is None or not node.provider_ipv4:
+                    raise ValueError("node/provider IP missing")
+                resume_stage = (
+                    "node_ssh_edit_public_key"
+                    if wizard["ssh_auth_method"] == SshAuthMethod.PRIVATE_KEY.value
+                    else "node_ssh_edit_secret"
+                )
+                await self._request_ssh_host_key_confirmation(
+                    update, context, user_id,
+                    host=node.provider_ipv4,
+                    port=port,
+                    resume_stage=resume_stage,
+                )
                 return
             if stage == "node_ssh_edit_public_key":
                 if not text.startswith("ssh-"):
@@ -424,6 +452,47 @@ class TelegramRegistryController:
         except Exception as exc:
             logger.exception("telegram_registry_wizard_failed", extra={"stage": stage})
             await update.effective_chat.send_message(f"❌ {self._safe_error(exc)}")
+
+    async def _request_ssh_host_key_confirmation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int,
+        *, host: str, port: int, resume_stage: str,
+    ) -> None:
+        wizard = context.user_data.get(_WIZARD_KEY)
+        if not isinstance(wizard, dict):
+            raise ValueError("SSH setup session expired")
+        candidate = await self.service.inspect_ssh_host_key(host=host, port=port)
+        confirmation_id = uuid4()
+        wizard.update({
+            "stage": "ssh_host_key_confirm",
+            "ssh_host": host,
+            "ssh_host_key_algorithm": candidate.algorithm,
+            "ssh_host_key_fingerprint": candidate.fingerprint,
+            "host_key_confirmation_id": str(confirmation_id),
+            "host_key_resume_stage": resume_stage,
+        })
+        signed = self.signer.encode("hk", confirmation_id, user_id)
+        await update.effective_chat.send_message(
+            "🔐 SSH host identity confirmation\n\n"
+            f"Host: {host}:{port}\n"
+            f"Algorithm: {candidate.algorithm}\n"
+            f"SHA256 fingerprint: `{candidate.fingerprint}`\n\n"
+            "Confirm only if this fingerprint belongs to the VPS you intend to manage. "
+            "ASO will keep strict SSH host-key verification enabled.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Trust this fingerprint", callback_data=signed),
+                InlineKeyboardButton("❌ Cancel", callback_data="r.cancel"),
+            ]]),
+        )
+
+    @staticmethod
+    def _ssh_secret_prompt(stage: str) -> str:
+        return {
+            "node_ssh_public_key": "Send the matching SSH public key used for provisioning replacement VPSs.",
+            "node_ssh_secret": "Send the SSH password. I will validate it and delete the message.",
+            "node_ssh_edit_public_key": "Send the matching SSH public key.",
+            "node_ssh_edit_secret": "Send the new SSH password/private key. It will be validated and the message deleted.",
+        }.get(stage, "Continue the SSH credential setup.")
 
     async def _provider_action(self, query: Any, context: ContextTypes.DEFAULT_TYPE, user_id: int, data: str) -> None:
         parts = data.split(".")

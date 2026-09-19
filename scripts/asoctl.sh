@@ -106,6 +106,10 @@ validate_release() {
   echo "ASO validation passed (${validator})."
 }
 
+master_network_check() {
+  bash "$PROJECT_ROOT/scripts/master_host_firewall.sh" --apply
+}
+
 upgrade_stack() {
   local skip_backup=false
   if [[ "${1:-}" == "--skip-backup" ]]; then
@@ -179,6 +183,11 @@ upgrade_stack() {
     return 1
   fi
 
+  stage="same-server Master network guard"
+  if ! master_network_check; then
+    echo "[ASO][UPGRADE][WARN] Local Master connectivity is still not verified; continuing upgrade without weakening broader firewall policy." >&2
+  fi
+
   stage="release validation"
   validate_release
 
@@ -187,6 +196,24 @@ upgrade_stack() {
   trap - ERR
   echo "[ASO][UPGRADE] Upgrade completed successfully: ${source_version}"
   echo "[ASO][UPGRADE] .env, PostgreSQL data, runtime secrets, and backups were preserved."
+}
+
+trust_ssh_host_key_interactive() {
+  local host="$1" port="$2" output fingerprint
+  echo "[ASO] Reading SSH host key from ${host}:${port} without authenticating..."
+  if ! output="$(compose run --rm --no-deps api python scripts/registry_cli.py ssh-host-key-preview --host "$host" --port "$port" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+  printf '%s\n' "$output"
+  fingerprint="$(printf '%s\n' "$output" | sed -n 's/^fingerprint=//p' | tail -n 1)"
+  [[ -n "$fingerprint" ]] || { echo "Could not read SSH fingerprint." >&2; return 1; }
+  if ! prompt_yes_no "Trust exactly this SSH fingerprint for ${host}:${port}?" "N"; then
+    echo "SSH host key was not trusted; node onboarding was cancelled." >&2
+    return 1
+  fi
+  compose run --rm --no-deps api python scripts/registry_cli.py ssh-host-key-trust \
+    --host "$host" --port "$port" --fingerprint "$fingerprint"
 }
 
 setup_registry() {
@@ -267,7 +294,7 @@ setup_registry() {
   while prompt_yes_no "Discover and register an existing Node/VPS?" "Y"; do
     local provider_key provider_server_id master_id node_name current_api_token api_token_ref candidate_id
     local ssh_username ssh_port auth_method ssh_secret_ref ssh_public_key private_key_path public_key_path ssh_password
-    local preview_output region_override server_type_override image_override
+    local preview_output region_override server_type_override image_override provider_host
 
     provider_key="$(prompt_required 'Provider key')"
     provider_server_id="$(prompt_required 'Provider server/instance ID')"
@@ -317,6 +344,8 @@ setup_registry() {
     fi
     printf '%s
 ' "$preview_output"
+    provider_host="$(printf '%s\n' "$preview_output" | sed -n 's/^[[:space:]]*"provider_ipv4": "\([^"]*\)".*/\1/p' | head -n 1)"
+    [[ -n "$provider_host" ]] || { echo "Could not extract Provider IPv4 from discovery output." >&2; continue; }
 
     echo
     if ! prompt_yes_no "The discovered Provider/Master/Node API data above is correct. Register it?" "Y"; then
@@ -327,6 +356,9 @@ setup_registry() {
     read -r -p "Local ASO node name (Enter = discovered Master node name): " node_name
     ssh_username="$(prompt_default 'SSH username for replacement VPSs' 'root')"
     ssh_port="$(prompt_default 'SSH port' '22')"
+    if ! trust_ssh_host_key_interactive "$provider_host" "$ssh_port"; then
+      continue
+    fi
     auth_method="$(prompt_default 'SSH auth (private_key/password)' 'private_key')"
     case "$auth_method" in
       private_key)
@@ -394,6 +426,9 @@ setup_registry() {
   if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
     compose --profile telegram up -d --force-recreate --no-deps bot
   fi
+  if ! master_network_check; then
+    echo "[ASO][WARN] Master network guard could not fully verify/fix connectivity. Run 'sudo ./asoctl master-network-check' after checking host firewall policy." >&2
+  fi
   echo
   echo "Safe next checks:"
   echo "  ./asoctl health"
@@ -437,6 +472,7 @@ case "$cmd" in
     if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
       compose --profile telegram up -d --no-deps bot
     fi
+    master_network_check || true
     ;;
   stop)
     # Intentionally does not remove named volumes.
@@ -449,6 +485,7 @@ case "$cmd" in
     if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
       compose --profile telegram up -d --force-recreate --no-deps bot
     fi
+    master_network_check || true
     ;;
   migrate)
     compose run --rm api alembic upgrade head
@@ -461,6 +498,9 @@ case "$cmd" in
     ;;
   upgrade)
     upgrade_stack "$@"
+    ;;
+  master-network-check)
+    master_network_check
     ;;
   safety)
     printf 'ASO_DRY_RUN=%s\n' "$(get_env ASO_DRY_RUN)"
@@ -526,6 +566,7 @@ Commands:
   validate             Validate Compose + production security + latest release structure
   upgrade [--skip-backup]
                        In-place upgrade after git pull: backup, build, migrate, recreate, health, validate
+  master-network-check Verify/fix only Docker-subnet -> same-host Master port access via narrow UFW rule
   safety               Print non-secret safety switches
   setup                Interactive non-destructive Provider/Node/VPS onboarding
   registry             Show Provider/Node registry and readiness

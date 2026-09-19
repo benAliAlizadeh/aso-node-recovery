@@ -47,6 +47,18 @@ def main() -> None:
             )
         )
 
+    known_hosts = Path(settings.effective_ssh_known_hosts_path)
+    if known_hosts.exists():
+        known_hosts_stat = known_hosts.stat()
+        known_hosts_mode = stat.S_IMODE(known_hosts_stat.st_mode)
+        checks.append(("SSH known_hosts is owner-only", known_hosts_mode & 0o077 == 0))
+        checks.append(
+            (
+                "SSH known_hosts is owned by the runtime user",
+                known_hosts_stat.st_uid == os.geteuid(),
+            )
+        )
+
     backup_dir = Path(settings.backup_dir)
     if backup_dir.exists():
         backup_stat = backup_dir.stat()

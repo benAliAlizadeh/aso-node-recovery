@@ -12,6 +12,7 @@ from app.core.secrets import RuntimeSecretStore
 from app.database import Database
 from app.models import ProviderType, SecretReferenceBackend, SshAuthMethod
 from app.registry import RegistryOnboardingService, SmartRegistryOnboardingService
+from app.registry.management import RegistryManagementService
 
 
 def parser() -> argparse.ArgumentParser:
@@ -20,6 +21,15 @@ def parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list")
     sub.add_parser("readiness")
+
+    host_key = sub.add_parser("ssh-host-key-preview")
+    host_key.add_argument("--host", required=True)
+    host_key.add_argument("--port", type=int, default=22)
+
+    trust_key = sub.add_parser("ssh-host-key-trust")
+    trust_key.add_argument("--host", required=True)
+    trust_key.add_argument("--port", type=int, default=22)
+    trust_key.add_argument("--fingerprint", required=True)
 
     secret = sub.add_parser("secret-write")
     secret.add_argument("--scope", required=True)
@@ -104,7 +114,27 @@ async def run(args: argparse.Namespace) -> int:
     database = Database.from_settings(settings)
     service = RegistryOnboardingService(database)
     smart = SmartRegistryOnboardingService(database, settings)
+    management = RegistryManagementService(database, settings)
     try:
+        if args.command == "ssh-host-key-preview":
+            candidate = await management.inspect_ssh_host_key(host=args.host, port=args.port)
+            print(f"host={candidate.host}")
+            print(f"port={candidate.port}")
+            print(f"algorithm={candidate.algorithm}")
+            print(f"fingerprint={candidate.fingerprint}")
+            return 0
+
+        if args.command == "ssh-host-key-trust":
+            candidate = await management.trust_ssh_host_key(
+                host=args.host,
+                port=args.port,
+                expected_fingerprint=args.fingerprint,
+            )
+            print(f"Trusted SSH host key: {candidate.host}:{candidate.port}")
+            print(f"algorithm={candidate.algorithm}")
+            print(f"fingerprint={candidate.fingerprint}")
+            return 0
+
         if args.command == "list":
             providers = await service.list_providers()
             nodes = await service.list_nodes()

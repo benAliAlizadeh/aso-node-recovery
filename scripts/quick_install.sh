@@ -422,6 +422,11 @@ install_stack() {
   compose up -d api worker
   wait_for_health
 
+  log "Checking same-server Master 3X-UI Docker connectivity."
+  if ! bash "$PROJECT_ROOT/scripts/master_host_firewall.sh" --apply; then
+    warn "Master network guard could not fully verify/fix connectivity. Installation will continue; run 'sudo ./asoctl master-network-check' for a focused retry."
+  fi
+
   if [[ "$(get_env ASO_TELEGRAM_BOT_ENABLED)" == "true" ]]; then
     verify_telegram_bot
     log "Starting Telegram bot profile."
@@ -457,6 +462,7 @@ Useful commands:
   ./asoctl backup
   ./asoctl migrate
   ./asoctl validate
+  ./asoctl master-network-check
 
 Next operational work:
   1. Run ./asoctl setup to register the existing provider/node/VPS inventory.

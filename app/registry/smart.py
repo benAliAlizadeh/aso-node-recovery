@@ -6,6 +6,8 @@ from app.core.config import Settings
 from app.core.secrets import SecretResolver
 from app.database import Database
 from app.database.repositories import ProviderRepository
+from app.deployment.ssh import AsyncSshCommandExecutor
+from app.deployment.types import SshConnectionSpec
 from app.models import SecretReferenceBackend, SshAuthMethod
 from app.registry.discovery import SmartNodeDiscovery, SmartOnboardingDiscoveryService
 from app.registry.service import RegistryOnboardingService
@@ -111,6 +113,23 @@ class SmartRegistryOnboardingService:
             server_type_override=server_type_override,
             image_override=image_override,
         )
+        ssh_secret = self.secret_resolver.resolve(SecretReferenceBackend.FILE, ssh_secret_ref)
+        ssh_result = await AsyncSshCommandExecutor().run(
+            SshConnectionSpec(
+                host=discovered.provider_host,
+                port=ssh_port,
+                username=ssh_username,
+                auth_method=ssh_auth_method,
+                secret=ssh_secret,
+                verify_host_key=self.settings.ssh_verify_host_key,
+                known_hosts=self.settings.effective_ssh_known_hosts_path,
+            ),
+            "printf ASO_SSH_READY",
+            timeout_seconds=min(15.0, self.settings.ssh_ready_timeout_seconds),
+        )
+        if ssh_result.exit_status != 0 or ssh_result.stdout != "ASO_SSH_READY":
+            raise ValueError("SSH validation failed")
+
         chosen_name = (name or "").strip() or discovered.suggested_name
         node = await self.registry.register_node(
             name=chosen_name,

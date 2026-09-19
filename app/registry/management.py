@@ -17,6 +17,7 @@ from app.database.repositories import (
     ReplacementJobRepository,
     VpsInstanceRepository,
 )
+from app.deployment.host_keys import AsyncSshHostKeyTrustService, SshHostKeyCandidate
 from app.deployment.node_api import ThreeXUiNodeApiVerifier
 from app.deployment.ssh import AsyncSshCommandExecutor
 from app.deployment.types import SshConnectionSpec
@@ -86,6 +87,10 @@ class RegistryManagementService:
             secret_resolver=self.resolver,
         )
         self.ssh_executor = AsyncSshCommandExecutor()
+        self.ssh_host_keys = AsyncSshHostKeyTrustService(
+            settings.effective_ssh_known_hosts_path,
+            timeout_seconds=min(10.0, settings.ssh_ready_timeout_seconds),
+        )
 
     async def list_providers(self) -> list[ProviderManagementSnapshot]:
         async with self.database.session() as session:
@@ -555,6 +560,22 @@ class RegistryManagementService:
             has_node_api_token=bool(credential.api_token_ref),
         )
 
+    async def inspect_ssh_host_key(self, *, host: str, port: int) -> SshHostKeyCandidate:
+        return await self.ssh_host_keys.inspect(host, port)
+
+    async def trust_ssh_host_key(
+        self,
+        *,
+        host: str,
+        port: int,
+        expected_fingerprint: str,
+    ) -> SshHostKeyCandidate:
+        return await self.ssh_host_keys.trust(
+            host,
+            port,
+            expected_fingerprint=expected_fingerprint,
+        )
+
     async def _verify_ssh(
         self,
         *,
@@ -577,7 +598,7 @@ class RegistryManagementService:
             auth_method=auth_method,
             secret=secret,
             verify_host_key=self.settings.ssh_verify_host_key,
-            known_hosts=self.settings.ssh_known_hosts_path or None,
+            known_hosts=self.settings.effective_ssh_known_hosts_path,
         )
         result = await self.ssh_executor.run(
             spec,

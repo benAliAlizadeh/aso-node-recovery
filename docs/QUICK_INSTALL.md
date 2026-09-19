@@ -109,3 +109,34 @@ After installation completes, register the existing infrastructure before using 
 ```
 
 Then send `/start` to the authorized Telegram bot. Real mutation remains disabled.
+
+
+## Same-server Master firewall guard
+
+When ASO runs in Docker on the same Linux host as the central 3X-UI panel, host firewall policy may
+block Docker bridge addresses even while the 3X-UI port is public and reachable from the Internet.
+The installer detects this case only when the Master connection mode is `auto`/`local-host` and the
+configured Master hostname resolves to this server. It discovers the API container's actual Docker
+network, subnet, and bridge, then verifies `host.docker.internal:<master-port>`.
+
+If the path is blocked and UFW is active, the installer inserts one highest-priority rule limited to:
+
+```text
+<ASO Docker subnet> on <ASO Docker bridge> -> this host TCP/<Master port>
+```
+
+It does not remove existing rules, does not open the port globally, and does not change any firewall
+for a remote Master. The check is idempotent. If another firewall chain still blocks the path, the
+installer prints a warning instead of weakening unrelated firewall policy. Re-run the focused guard with:
+
+```bash
+sudo ./asoctl master-network-check
+```
+
+## Same-server 3X-UI Master firewall guard
+
+If the configured Master resolves to the ASO host, the installer checks Docker-to-host connectivity. With active UFW, it may insert one high-priority allow rule limited to the actual ASO Docker bridge/subnet and the Master TCP port. It does not remove firewall rules or make the Master port globally accessible. Remote Masters are never changed by this guard.
+
+## SSH host identity during onboarding
+
+ASO never disables strict SSH host-key verification. During Node onboarding it displays the SSH SHA256 host-key fingerprint and requires explicit confirmation before adding that exact host/port key to the persistent ASO known_hosts file. A fingerprint which changes before confirmation is rejected.

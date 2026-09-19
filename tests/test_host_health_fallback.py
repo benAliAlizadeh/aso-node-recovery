@@ -19,4 +19,4 @@ def test_asoctl_health_falls_back_to_internal_api() -> None:
 
 
 def test_release_version() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.5.3-safe-upgrade"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.5.4-network-ssh-trust"

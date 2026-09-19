@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.5.3-safe-upgrade** — Master 3X-UI connectivity now supports both same-host Docker deployments and remote Master servers with safe automatic routing.
+Current release: **1.5.4-network-ssh-trust** — same-host Master firewall guard plus explicit SSH host-key trust onboarding.
 
 ## Core replacement invariant
 
@@ -119,7 +119,7 @@ sudo ./install.sh
 The installer provisions Docker/Compose when required, creates a protected `.env`, generates local
 secrets, starts PostgreSQL, applies migrations, runs the security review, starts the safe production
 stack, and verifies `/health`. It **always** leaves real infrastructure mutation and replacement workers
-disabled. See [Quick installation](docs/QUICK_INSTALL.md).
+disabled. For a same-server 3X-UI Master, the installer also checks Docker-to-host connectivity and, only when UFW is active and the configured Master resolves to this host, inserts a narrow source-subnet/bridge/port rule before verifying the connection. Remote Master firewall policy is never modified. See [Quick installation](docs/QUICK_INSTALL.md).
 
 ## Operational onboarding
 
@@ -169,6 +169,13 @@ A pre-upgrade PostgreSQL backup is created by default. Use `--skip-backup` only 
 accept proceeding without that backup. The upgrade command never runs `down -v`, prunes volumes,
 resets PostgreSQL, regenerates `.env`, or enables destructive VPS/Master operations. See
 [In-place upgrades](docs/UPGRADE.md).
+
+
+### Same-host Master and SSH trust
+
+When ASO and the central 3X-UI panel share one server, the installer/upgrade path detects the actual ASO Docker subnet and may add only a narrow UFW allow rule from that subnet to the configured Master TCP port. Remote-Master deployments are left untouched.
+
+Node onboarding keeps strict SSH host-key verification enabled. Before ASO accepts SSH credentials for an existing node, it fetches the server host key without authenticating, shows the SHA256 fingerprint, requires explicit operator confirmation, re-fetches the key to detect races/changes, and only then stores the exact host/port key in the persistent runtime trust store.
 
 ## Production
 

@@ -24,5 +24,5 @@ class NodeSshSpecFactory:
             auth_method=credential.ssh_auth_method,
             secret=secret,
             verify_host_key=self.settings.ssh_verify_host_key,
-            known_hosts=self.settings.ssh_known_hosts_path or None,
+            known_hosts=self.settings.effective_ssh_known_hosts_path,
         )

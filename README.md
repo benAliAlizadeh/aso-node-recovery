@@ -214,3 +214,9 @@ ASO now enforces explicitly confirmed SSH SHA256 host-key fingerprints directly 
 managed `known_hosts` file remains persistent, but SSH command execution pins the presented key to
 that confirmed fingerprint instead of depending on ambient host matching behavior. Unknown or
 changed keys still require an explicit Telegram/CLI confirmation and are never auto-accepted.
+
+### AsyncSSH host-key probe compatibility
+
+The read-only SSH host-key probe is bounded by `asyncio.wait_for()` and no longer passes
+unsupported timeout keywords to `asyncssh.get_server_host_key()`. This keeps fingerprint
+confirmation compatible across the supported AsyncSSH 2.x range while retaining a hard probe timeout.

@@ -99,7 +99,6 @@ class AsyncSshHostKeyTrustService:
                 asyncssh.get_server_host_key(
                     host,
                     port=port,
-                    connect_timeout=self.timeout_seconds,
                     config=None,
                 ),
                 timeout=self.timeout_seconds + 1.0,

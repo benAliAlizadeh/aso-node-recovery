@@ -33,7 +33,7 @@ def test_validate_uses_latest_available_release_validator() -> None:
     source = (ROOT / "scripts" / "asoctl.sh").read_text(encoding="utf-8")
     assert "latest_validator()" in source
     assert "sort -V | tail -n 1" in source
-    assert 'python "scripts/${validator}"' in source
+    assert 'python "/source/scripts/${validator}"' in source
     assert "validate_patch19.py" not in source
 
 

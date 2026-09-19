@@ -344,13 +344,26 @@ class TelegramRegistryController:
             if stage == "node_ssh_secret":
                 await self._delete_secret_message(update)
                 secret = SecretStr(text)
-                await self.service.validate_ssh(
-                    host=wizard["provider_ipv4"],
-                    username=wizard["ssh_username"],
-                    port=wizard["ssh_port"],
-                    auth_method=SshAuthMethod(wizard["ssh_auth_method"]),
-                    secret=secret,
-                )
+                try:
+                    await self.service.validate_ssh(
+                        host=wizard["provider_ipv4"],
+                        username=wizard["ssh_username"],
+                        port=wizard["ssh_port"],
+                        auth_method=SshAuthMethod(wizard["ssh_auth_method"]),
+                        secret=secret,
+                    )
+                except Exception as exc:
+                    if self._is_untrusted_ssh_host_key_error(exc):
+                        # Do not retain the submitted secret. Ask the user to explicitly
+                        # trust the observed fingerprint, then re-send the credential.
+                        await self._request_ssh_host_key_confirmation(
+                            update, context, user_id,
+                            host=wizard["provider_ipv4"],
+                            port=int(wizard["ssh_port"]),
+                            resume_stage="node_ssh_secret",
+                        )
+                        return
+                    raise
                 ref = self.service.stage_secret("node-ssh", wizard["provider_server_id"], secret)
                 wizard["ssh_secret_ref"] = ref
                 wizard["stage"] = "node_confirm"
@@ -428,13 +441,24 @@ class TelegramRegistryController:
                 if node is None or not node.provider_ipv4:
                     raise ValueError("node/provider IP missing")
                 secret = SecretStr(text)
-                await self.service.validate_ssh(
-                    host=node.provider_ipv4,
-                    username=wizard["ssh_username"],
-                    port=wizard["ssh_port"],
-                    auth_method=SshAuthMethod(wizard["ssh_auth_method"]),
-                    secret=secret,
-                )
+                try:
+                    await self.service.validate_ssh(
+                        host=node.provider_ipv4,
+                        username=wizard["ssh_username"],
+                        port=wizard["ssh_port"],
+                        auth_method=SshAuthMethod(wizard["ssh_auth_method"]),
+                        secret=secret,
+                    )
+                except Exception as exc:
+                    if self._is_untrusted_ssh_host_key_error(exc):
+                        await self._request_ssh_host_key_confirmation(
+                            update, context, user_id,
+                            host=node.provider_ipv4,
+                            port=int(wizard["ssh_port"]),
+                            resume_stage="node_ssh_edit_secret",
+                        )
+                        return
+                    raise
                 ref = self.service.stage_secret("node-ssh", f"node-{node_id.hex}-replace", secret)
                 wizard["staged_ref"] = ref
                 wizard["stage"] = "node_ssh"
@@ -452,6 +476,24 @@ class TelegramRegistryController:
         except Exception as exc:
             logger.exception("telegram_registry_wizard_failed", extra={"stage": stage})
             await update.effective_chat.send_message(f"❌ {self._safe_error(exc)}")
+
+    @staticmethod
+    def _is_untrusted_ssh_host_key_error(exc: BaseException) -> bool:
+        current: BaseException | None = exc
+        for _ in range(6):
+            if current is None:
+                break
+            name = type(current).__name__.lower()
+            message = str(current).lower()
+            if (
+                "hostkeynotverifiable" in name
+                or "host key is not trusted" in message
+                or "host key is not trusted for host" in message
+                or "host key verification failed" in message
+            ):
+                return True
+            current = current.__cause__ or current.__context__
+        return False
 
     async def _request_ssh_host_key_confirmation(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int,

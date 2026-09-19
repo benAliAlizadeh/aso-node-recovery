@@ -3,7 +3,7 @@
 Production-oriented, safety-first controller that replaces remote 3X-UI nodes on demand when their
 public IP becomes unreachable from Iran.
 
-Current release: **1.5.4-network-ssh-trust** — same-host Master firewall guard plus explicit SSH host-key trust onboarding.
+Current release: **1.5.5-upgrade-validator-ssh-trust** — in-place validation fix plus resilient SSH host-key trust onboarding.
 
 ## Core replacement invariant
 
@@ -203,3 +203,7 @@ docker compose -f docker-compose.prod.yml --profile telegram up -d bot
 
 Keep real-infrastructure guards disabled through initial monitoring, Telegram, backup, restore-drill,
 and DRY_RUN verification.
+
+### In-place validation and SSH trust
+
+`./asoctl upgrade` validates the checked-out source through a read-only bind mount, so production images remain lean and do not need `tests/` copied into `/app`. If an SSH credential check encounters an untrusted host key, Telegram shows the observed SHA256 fingerprint and requires explicit confirmation before retrying with strict host-key verification still enabled.

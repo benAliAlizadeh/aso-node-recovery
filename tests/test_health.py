@@ -20,4 +20,4 @@ def test_health_endpoint_reports_safe_defaults() -> None:
     assert body["service"] == "aso-node-recovery"
     assert body["environment"] == "test"
     assert body["dry_run"] is True
-    assert body["version"] == "1.5.4-network-ssh-trust"
+    assert body["version"] == "1.5.5-upgrade-validator-ssh-trust"

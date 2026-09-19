@@ -101,8 +101,16 @@ validate_release() {
   local validator
   validator="$(latest_validator)"
   compose config >/dev/null
+
+  # Security review validates the built runtime image.
   compose run --rm api python scripts/security_review.py
-  compose run --rm api python "scripts/${validator}"
+
+  # Release validators intentionally inspect source-only files such as tests/.
+  # Production images stay lean and do not COPY tests, so mount the checked-out
+  # source read-only instead of requiring test files inside /app.
+  compose run --rm --no-deps \
+    -v "$PROJECT_ROOT:/source:ro" \
+    api python "/source/scripts/${validator}"
   echo "ASO validation passed (${validator})."
 }
 

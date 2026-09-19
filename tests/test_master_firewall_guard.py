@@ -78,7 +78,7 @@ def test_asoctl_exposes_guard_and_upgrade_invokes_it() -> None:
 
 
 def test_release_version() -> None:
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.5.4-network-ssh-trust"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "1.5.5-upgrade-validator-ssh-trust"
 
 
 def test_same_server_guard_applies_only_narrow_rule_and_rechecks(tmp_path: Path) -> None:

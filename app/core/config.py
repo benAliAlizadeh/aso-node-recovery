@@ -85,8 +85,14 @@ class Settings(BaseSettings):
     replacement_worker_interval_seconds: int = Field(default=15, ge=5, le=3600)
     worker_scheduler_enabled: bool = False
     replacement_ip_check_port: int = Field(default=22, ge=1, le=65535)
-    # Give a newly RUNNING VPS time to finish OS/SSH boot before Iran reachability checks.
-    replacement_vps_boot_grace_seconds: int = Field(default=120, ge=0, le=900)
+    # Provider RUNNING does not guarantee that the guest OS/network stack is ready yet.
+    replacement_vps_boot_grace_seconds: int = Field(default=180, ge=0, le=900)
+    # Candidate IP verification is repeated to avoid classifying a booting VPS as Iran-filtered.
+    replacement_reachability_rounds: int = Field(default=5, ge=1, le=10)
+    replacement_reachability_round_interval_seconds: float = Field(default=60.0, ge=0.0, le=600.0)
+    replacement_reachability_required_consensus: int = Field(default=3, ge=1, le=10)
+    replacement_external_check_max_nodes: int = Field(default=5, ge=1, le=25)
+    replacement_external_check_min_success_nodes: int = Field(default=3, ge=1, le=25)
     replacement_job_lease_seconds: int = Field(default=1800, ge=30, le=3600)
     replacement_emergency_stop: bool = True
     runtime_secret_dir: str = ".runtime-secrets"
@@ -114,6 +120,19 @@ class Settings(BaseSettings):
     def validate_configuration(self) -> "Settings":
         if self.check_host_min_success_nodes > self.check_host_max_nodes:
             raise ValueError("check_host_min_success_nodes cannot exceed check_host_max_nodes")
+        if (
+            self.replacement_external_check_min_success_nodes
+            > self.replacement_external_check_max_nodes
+        ):
+            raise ValueError(
+                "replacement_external_check_min_success_nodes cannot exceed "
+                "replacement_external_check_max_nodes"
+            )
+        if self.replacement_reachability_required_consensus > self.replacement_reachability_rounds:
+            raise ValueError(
+                "replacement_reachability_required_consensus cannot exceed "
+                "replacement_reachability_rounds"
+            )
 
         if self.telegram_bot_enabled:
             if self.telegram_bot_token is None:

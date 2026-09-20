@@ -39,12 +39,18 @@ class CheckHostClient:
         if self._owns_client:
             await self._client.aclose()
 
-    async def list_nodes(self, *, country_code: str | None = None) -> tuple[str, ...]:
+    async def list_nodes(
+        self,
+        *,
+        country_code: str | None = None,
+        exclude_country_codes: Sequence[str] = (),
+    ) -> tuple[str, ...]:
         payload = await self._get_json("/nodes/hosts")
         nodes_payload = payload.get("nodes")
         if not isinstance(nodes_payload, Mapping):
             raise CheckHostError("Check-Host nodes response did not contain a nodes mapping")
 
+        excluded = {code.strip().lower() for code in exclude_country_codes if code.strip()}
         selected: list[str] = []
         for node_name, details in nodes_payload.items():
             if not isinstance(node_name, str) or not isinstance(details, Mapping):
@@ -53,6 +59,8 @@ class CheckHostClient:
             node_country = None
             if isinstance(location, Sequence) and not isinstance(location, (str, bytes)) and location:
                 node_country = str(location[0]).lower()
+            if node_country in excluded:
+                continue
             if country_code is None or node_country == country_code.lower():
                 selected.append(node_name)
         return tuple(sorted(selected))
@@ -61,8 +69,9 @@ class CheckHostClient:
         self,
         *,
         configured_nodes: Sequence[str] = (),
-        country_code: str = "ir",
+        country_code: str | None = "ir",
         max_nodes: int = 5,
+        exclude_country_codes: Sequence[str] = (),
     ) -> tuple[str, ...]:
         if configured_nodes:
             unique = tuple(dict.fromkeys(node.strip() for node in configured_nodes if node.strip()))
@@ -70,8 +79,13 @@ class CheckHostClient:
                 raise CheckHostError("Configured Check-Host node list is empty after normalization")
             return unique[:max_nodes]
 
-        discovered = await self.list_nodes(country_code=country_code)
+        discovered = await self.list_nodes(
+            country_code=country_code,
+            exclude_country_codes=exclude_country_codes,
+        )
         if not discovered:
+            if country_code is None:
+                raise CheckHostError("No Check-Host nodes found for the requested node scope")
             raise CheckHostError(f"No Check-Host nodes found for country code {country_code!r}")
         return discovered[:max_nodes]
 

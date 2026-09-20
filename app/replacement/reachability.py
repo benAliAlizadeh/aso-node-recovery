@@ -26,11 +26,39 @@ class ReplacementReachabilityVerifier:
         self.settings = settings
 
     async def verify(self, host: str) -> ReplacementReachabilityResult:
+        """Verify the candidate from Iran Check-Host nodes."""
         nodes = await self.client.resolve_nodes(
             configured_nodes=self.settings.check_host_nodes,
             country_code=self.settings.check_host_country_code,
             max_nodes=self.settings.check_host_max_nodes,
         )
+        return await self._verify_with_nodes(
+            host,
+            nodes=nodes,
+            min_success_nodes=self.settings.check_host_min_success_nodes,
+        )
+
+    async def verify_external(self, host: str) -> ReplacementReachabilityResult:
+        """Confirm outside-Iran reachability before interpreting an Iran-side failure."""
+        nodes = await self.client.resolve_nodes(
+            configured_nodes=(),
+            country_code=None,
+            max_nodes=self.settings.replacement_external_check_max_nodes,
+            exclude_country_codes=(self.settings.check_host_country_code,),
+        )
+        return await self._verify_with_nodes(
+            host,
+            nodes=nodes,
+            min_success_nodes=self.settings.replacement_external_check_min_success_nodes,
+        )
+
+    async def _verify_with_nodes(
+        self,
+        host: str,
+        *,
+        nodes: tuple[str, ...],
+        min_success_nodes: int,
+    ) -> ReplacementReachabilityResult:
         request = await self.client.create_tcp_check(
             host, self.settings.replacement_ip_check_port, nodes=nodes
         )
@@ -41,6 +69,6 @@ class ReplacementReachabilityVerifier:
         )
         decision = ReachabilityEvaluator.evaluate(
             summary,
-            min_success_nodes=self.settings.check_host_min_success_nodes,
+            min_success_nodes=min_success_nodes,
         )
         return ReplacementReachabilityResult(decision=decision, summary=summary)

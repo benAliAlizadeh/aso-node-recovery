@@ -34,7 +34,7 @@ def test_replacement_worker_and_emergency_controls_are_safe_by_default() -> None
     assert settings.replacement_worker_enabled is False
     assert settings.replacement_emergency_stop is True
     assert settings.replacement_job_lease_seconds >= settings.provisioning_timeout_seconds
-    assert settings.replacement_vps_boot_grace_seconds == 120
+    assert settings.replacement_vps_boot_grace_seconds == 180
 
 
 

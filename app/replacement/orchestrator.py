@@ -473,11 +473,8 @@ class ReplacementOrchestrator:
                 await session.commit()
             return
 
-        # Cloud providers may report RUNNING before the guest OS and SSH/network stack are fully
-        # booted. Waiting here prevents a healthy fresh IP from being rejected by Check-Host only
-        # because port 22 has not started listening yet.
-        await self._wait_for_vps_boot_grace(job_id, lease_token)
-
+        # Persist provider readiness first. Provider RUNNING can still precede guest OS/network
+        # readiness, so the boot grace starts only after this durable RUNNING observation.
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)
             new_vps = await self._require_new_vps(session, job)
@@ -486,12 +483,36 @@ class ReplacementOrchestrator:
             new_vps.region = server.region or new_vps.region
             new_vps.server_type = server.server_type or new_vps.server_type
             new_vps.image = server.image or new_vps.image
+            await self._renew_lease_in_session(session, job_id, lease_token)
+            await session.commit()
+
+        logger.info(
+            "replacement_provider_server_running",
+            extra={
+                "job_id": str(job_id),
+                "provider_server_id": provider_server_id,
+                "host": server.ipv4,
+            },
+        )
+        await self._wait_for_vps_boot_grace(job_id, lease_token)
+
+        async with self.database.session() as session:
+            job = await self._require_job(session, job_id)
             self.state_machine.transition(job, ReplacementCheckpoint.CHECKING_IP)
             await self._add_event(
                 session,
                 job,
                 EventType.IP_CHECK_STARTED,
-                "Replacement IP reachability check started",
+                "Replacement IP multi-round reachability verification started",
+                payload={
+                    "rounds": self.settings.replacement_reachability_rounds,
+                    "round_interval_seconds": (
+                        self.settings.replacement_reachability_round_interval_seconds
+                    ),
+                    "required_consensus": (
+                        self.settings.replacement_reachability_required_consensus
+                    ),
+                },
             )
             await self._renew_lease_in_session(session, job_id, lease_token)
             await session.commit()
@@ -505,18 +526,7 @@ class ReplacementOrchestrator:
             "replacement_vps_boot_grace_started",
             extra={"job_id": str(job_id), "grace_seconds": grace_seconds},
         )
-        remaining = grace_seconds
-        # Renew the durable workflow lease during the grace period so a deliberately long boot
-        # wait cannot make another worker believe this job was abandoned.
-        renew_interval = max(1.0, min(30.0, self.settings.replacement_job_lease_seconds / 3.0))
-        while remaining > 0:
-            await self._assert_not_paused()
-            sleep_for = min(remaining, renew_interval)
-            await asyncio.sleep(sleep_for)
-            remaining -= sleep_for
-            async with self.database.session() as session:
-                await self._renew_lease_in_session(session, job_id, lease_token)
-                await session.commit()
+        await self._sleep_with_lease(job_id, lease_token, grace_seconds)
 
         logger.info(
             "replacement_vps_boot_grace_completed",
@@ -536,16 +546,16 @@ class ReplacementOrchestrator:
             decision = ReachabilityDecision.REACHABLE
             summary_payload: dict[str, Any] = {"dry_run": True}
         else:
-            result = await self.reachability.verify(host)
-            decision = result.decision
-            summary_payload = {
-                "success_count": result.summary.success_count,
-                "failure_count": result.summary.failure_count,
-                "total_nodes": result.summary.total_nodes,
-            }
+            decision, summary_payload = await self._verify_candidate_reachability(
+                job_id,
+                lease_token,
+                host,
+            )
 
         if decision is ReachabilityDecision.INDETERMINATE:
-            raise ReplacementDeferredError("replacement IP reachability is indeterminate")
+            raise ReplacementDeferredError(
+                "replacement IP verification is inconclusive; candidate VPS was kept for retry"
+            )
 
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)
@@ -570,6 +580,122 @@ class ReplacementOrchestrator:
                 )
                 self.state_machine.transition(job, ReplacementCheckpoint.IP_VERIFIED)
             await session.commit()
+
+
+    async def _verify_candidate_reachability(
+        self,
+        job_id: UUID,
+        lease_token: str,
+        host: str,
+    ) -> tuple[ReachabilityDecision, dict[str, Any]]:
+        rounds = self.settings.replacement_reachability_rounds
+        required = self.settings.replacement_reachability_required_consensus
+        clean_rounds = 0
+        filtered_rounds = 0
+        external_unavailable_rounds = 0
+        indeterminate_rounds = 0
+        round_details: list[dict[str, Any]] = []
+
+        for round_number in range(1, rounds + 1):
+            await self._assert_not_paused()
+            external = await self.reachability.verify_external(host)
+            iran = None
+            verdict = "external_not_ready"
+
+            if external.decision is ReachabilityDecision.REACHABLE:
+                iran = await self.reachability.verify(host)
+                if iran.decision is ReachabilityDecision.REACHABLE:
+                    clean_rounds += 1
+                    verdict = "clean"
+                elif iran.decision is ReachabilityDecision.UNREACHABLE:
+                    filtered_rounds += 1
+                    verdict = "iran_filtered"
+                else:
+                    indeterminate_rounds += 1
+                    verdict = "iran_indeterminate"
+            elif external.decision is ReachabilityDecision.UNREACHABLE:
+                external_unavailable_rounds += 1
+            else:
+                indeterminate_rounds += 1
+                verdict = "external_indeterminate"
+
+            detail: dict[str, Any] = {
+                "round": round_number,
+                "verdict": verdict,
+                "external": self._reachability_summary_payload(external),
+            }
+            if iran is not None:
+                detail["iran"] = self._reachability_summary_payload(iran)
+            round_details.append(detail)
+
+            logger.info(
+                "replacement_reachability_round_completed",
+                extra={
+                    "job_id": str(job_id),
+                    "host": host,
+                    "round": round_number,
+                    "rounds": rounds,
+                    "verdict": verdict,
+                    "clean_rounds": clean_rounds,
+                    "filtered_rounds": filtered_rounds,
+                    "external_unavailable_rounds": external_unavailable_rounds,
+                    "indeterminate_rounds": indeterminate_rounds,
+                },
+            )
+
+            async with self.database.session() as session:
+                await self._renew_lease_in_session(session, job_id, lease_token)
+                await session.commit()
+
+            if round_number < rounds:
+                await self._sleep_with_lease(
+                    job_id,
+                    lease_token,
+                    self.settings.replacement_reachability_round_interval_seconds,
+                )
+
+        payload: dict[str, Any] = {
+            "rounds": rounds,
+            "required_consensus": required,
+            "clean_rounds": clean_rounds,
+            "filtered_rounds": filtered_rounds,
+            "external_unavailable_rounds": external_unavailable_rounds,
+            "indeterminate_rounds": indeterminate_rounds,
+            "round_details": round_details,
+        }
+        if clean_rounds >= required:
+            return ReachabilityDecision.REACHABLE, payload
+        if filtered_rounds >= required:
+            return ReachabilityDecision.UNREACHABLE, payload
+        return ReachabilityDecision.INDETERMINATE, payload
+
+    @staticmethod
+    def _reachability_summary_payload(result: Any) -> dict[str, Any]:
+        return {
+            "decision": result.decision.value,
+            "success_count": result.summary.success_count,
+            "failure_count": result.summary.failure_count,
+            "total_nodes": result.summary.total_nodes,
+        }
+
+    async def _sleep_with_lease(
+        self,
+        job_id: UUID,
+        lease_token: str,
+        seconds: float,
+    ) -> None:
+        remaining = float(seconds)
+        if remaining <= 0:
+            return
+        renew_interval = max(1.0, min(30.0, self.settings.replacement_job_lease_seconds / 3.0))
+        while remaining > 0:
+            await self._assert_not_paused()
+            sleep_for = min(remaining, renew_interval)
+            await asyncio.sleep(sleep_for)
+            remaining -= sleep_for
+            async with self.database.session() as session:
+                await self._renew_lease_in_session(session, job_id, lease_token)
+                await session.commit()
 
     async def _stage_temp_cleanup(self, job_id: UUID, lease_token: str) -> None:
         async with self.database.session() as session:

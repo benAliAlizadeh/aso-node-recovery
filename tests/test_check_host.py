@@ -90,3 +90,31 @@ def test_tcp_result_parser_normalizes_success_failure_pending_and_malformed() ->
     assert summary.failure_count == 1
     assert summary.pending_count == 1
     assert summary.malformed_count == 1
+
+
+@pytest.mark.asyncio
+async def test_can_discover_external_nodes_while_excluding_iran() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/nodes/hosts"
+        return httpx.Response(
+            200,
+            json={
+                "nodes": {
+                    "ir1.node.check-host.net": {"location": ["ir", "Iran", "Tehran"]},
+                    "de1.node.check-host.net": {"location": ["de", "Germany", "Falkenstein"]},
+                    "us1.node.check-host.net": {"location": ["us", "USA", "New York"]},
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(
+        base_url="https://check-host.net", transport=httpx.MockTransport(handler)
+    ) as http_client:
+        client = CheckHostClient(client=http_client)
+        nodes = await client.resolve_nodes(
+            country_code=None,
+            exclude_country_codes=("ir",),
+            max_nodes=5,
+        )
+
+    assert nodes == ("de1.node.check-host.net", "us1.node.check-host.net")

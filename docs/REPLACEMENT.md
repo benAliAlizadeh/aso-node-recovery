@@ -41,7 +41,8 @@ The sequence is:
 2. search provider for the deterministic candidate name;
 3. create only when no candidate is found and the reconciliation grace period has expired;
 4. persist provider server identity immediately;
-5. wait for readiness as a separate operation.
+5. wait for readiness as a separate operation;
+6. after the provider reports `RUNNING`, wait `ASO_REPLACEMENT_VPS_BOOT_GRACE_SECONDS` (default `120`) before the first Iran reachability check so the guest OS/SSH stack can finish booting.
 
 A transient create error is therefore deferred, not blindly retried. The next worker cycle reconciles
 provider state first.

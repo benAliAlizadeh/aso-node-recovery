@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     replacement_worker_interval_seconds: int = Field(default=15, ge=5, le=3600)
     worker_scheduler_enabled: bool = False
     replacement_ip_check_port: int = Field(default=22, ge=1, le=65535)
+    # Give a newly RUNNING VPS time to finish OS/SSH boot before Iran reachability checks.
+    replacement_vps_boot_grace_seconds: int = Field(default=120, ge=0, le=900)
     replacement_job_lease_seconds: int = Field(default=1800, ge=30, le=3600)
     replacement_emergency_stop: bool = True
     runtime_secret_dir: str = ".runtime-secrets"

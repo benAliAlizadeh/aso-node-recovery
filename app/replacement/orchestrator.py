@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import re
@@ -472,6 +473,11 @@ class ReplacementOrchestrator:
                 await session.commit()
             return
 
+        # Cloud providers may report RUNNING before the guest OS and SSH/network stack are fully
+        # booted. Waiting here prevents a healthy fresh IP from being rejected by Check-Host only
+        # because port 22 has not started listening yet.
+        await self._wait_for_vps_boot_grace(job_id, lease_token)
+
         async with self.database.session() as session:
             job = await self._require_job(session, job_id)
             new_vps = await self._require_new_vps(session, job)
@@ -489,6 +495,33 @@ class ReplacementOrchestrator:
             )
             await self._renew_lease_in_session(session, job_id, lease_token)
             await session.commit()
+
+    async def _wait_for_vps_boot_grace(self, job_id: UUID, lease_token: str) -> None:
+        grace_seconds = float(self.settings.replacement_vps_boot_grace_seconds)
+        if grace_seconds <= 0:
+            return
+
+        logger.info(
+            "replacement_vps_boot_grace_started",
+            extra={"job_id": str(job_id), "grace_seconds": grace_seconds},
+        )
+        remaining = grace_seconds
+        # Renew the durable workflow lease during the grace period so a deliberately long boot
+        # wait cannot make another worker believe this job was abandoned.
+        renew_interval = max(1.0, min(30.0, self.settings.replacement_job_lease_seconds / 3.0))
+        while remaining > 0:
+            await self._assert_not_paused()
+            sleep_for = min(remaining, renew_interval)
+            await asyncio.sleep(sleep_for)
+            remaining -= sleep_for
+            async with self.database.session() as session:
+                await self._renew_lease_in_session(session, job_id, lease_token)
+                await session.commit()
+
+        logger.info(
+            "replacement_vps_boot_grace_completed",
+            extra={"job_id": str(job_id), "grace_seconds": grace_seconds},
+        )
 
     async def _stage_checking_ip(self, job_id: UUID, lease_token: str) -> None:
         async with self.database.session() as session:

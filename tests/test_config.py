@@ -66,12 +66,12 @@ def test_enabled_telegram_requires_allowlist_and_callback_secret() -> None:
     assert settings.telegram_authorized_user_ids == (123,)
 
 
-def test_production_refuses_disabled_transport_verification() -> None:
+def test_production_allows_disabled_ssh_host_key_but_requires_tls_verification() -> None:
     import pytest
     from pydantic import ValidationError
 
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production", ssh_verify_host_key=False)
+    settings = Settings(_env_file=None, environment="production", ssh_verify_host_key=False)
+    assert settings.ssh_verify_host_key is False
     with pytest.raises(ValidationError):
         Settings(_env_file=None, environment="production", master_3xui_verify_tls=False)
 

@@ -176,7 +176,7 @@ resets PostgreSQL, regenerates `.env`, or enables destructive VPS/Master operati
 
 When ASO and the central 3X-UI panel share one server, the installer/upgrade path detects the actual ASO Docker subnet and may add only a narrow UFW allow rule from that subnet to the configured Master TCP port. Remote-Master deployments are left untouched.
 
-Node onboarding keeps strict SSH host-key verification enabled. Before ASO accepts SSH credentials for an existing node, it fetches the server host key without authenticating, shows the SHA256 fingerprint, requires explicit operator confirmation, re-fetches the key to detect races/changes, and only then stores the exact host/port key in the persistent runtime trust store.
+Node onboarding follows `ASO_SSH_VERIFY_HOST_KEY`. It defaults to `false` for ephemeral/recycled VPS IPs, avoiding stale `known_hosts` conflicts. Operators can set it to `true` to require explicit SHA256 fingerprint confirmation and persist the exact host/port key in ASO's trust store.
 
 ## Production
 
@@ -207,14 +207,14 @@ and DRY_RUN verification.
 
 ### In-place validation and SSH trust
 
-`./asoctl upgrade` validates the checked-out source through a read-only bind mount, so production images remain lean and do not need `tests/` copied into `/app`. If an SSH credential check encounters an untrusted host key, Telegram shows the observed SHA256 fingerprint and requires explicit confirmation before retrying with strict host-key verification still enabled.
+`./asoctl upgrade` validates the checked-out source through a read-only bind mount, so production images remain lean and do not need `tests/` copied into `/app`. When `ASO_SSH_VERIFY_HOST_KEY=true`, an untrusted SSH host key triggers Telegram fingerprint confirmation. When it is `false`, SSH skips the managed `known_hosts` check, which is intended for short-lived replacement VPS instances.
 
-### SSH host-key confirmation hardening
+### SSH host-key policy
 
-ASO now enforces explicitly confirmed SSH SHA256 host-key fingerprints directly at runtime. The
-managed `known_hosts` file remains persistent, but SSH command execution pins the presented key to
-that confirmed fingerprint instead of depending on ambient host matching behavior. Unknown or
-changed keys still require an explicit Telegram/CLI confirmation and are never auto-accepted.
+`ASO_SSH_VERIFY_HOST_KEY=false` is the default for short-lived replacement VPS instances where
+provider IPs can be recycled with new SSH host keys. In this mode AsyncSSH does not consult the
+managed `known_hosts` file. Set the option to `true` when strict identity pinning is desired; ASO then
+uses explicit Telegram/CLI fingerprint confirmation and pins the confirmed SHA256 host key.
 
 ### AsyncSSH host-key probe compatibility
 

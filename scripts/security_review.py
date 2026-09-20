@@ -16,7 +16,6 @@ def main() -> None:
     settings = get_settings()
     checks: list[tuple[str, bool]] = [
         ("production environment", settings.environment == "production"),
-        ("SSH host-key verification", settings.ssh_verify_host_key),
         ("node TLS verification", settings.three_xui_verify_tls),
         ("master TLS verification", settings.master_3xui_verify_tls),
         ("database restore disabled", not settings.allow_database_restore),
@@ -74,6 +73,10 @@ def main() -> None:
     failed = [name for name, ok in checks if not ok]
     for name, ok in checks:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}")
+    print(
+        "[INFO] SSH_HOST_KEY_VERIFICATION="
+        + ("enabled" if settings.ssh_verify_host_key else "disabled (ephemeral-node mode)")
+    )
     print(f"[INFO] DRY_RUN={settings.dry_run}")
     print(
         "[INFO] ALLOW_REAL_INFRASTRUCTURE_MUTATION="

@@ -94,10 +94,10 @@ class Settings(BaseSettings):
     backup_retention_count: int = Field(default=14, ge=1, le=365)
     allow_database_restore: bool = False
 
-    # SSH / 3X-UI deployment defaults. Strict host-key verification remains enabled by default.
+    # SSH / 3X-UI deployment defaults. Host-key verification is optional for ephemeral nodes.
     ssh_ready_timeout_seconds: float = Field(default=180.0, ge=10.0, le=1800.0)
     ssh_poll_interval_seconds: float = Field(default=3.0, ge=0.5, le=60.0)
-    ssh_verify_host_key: bool = True
+    ssh_verify_host_key: bool = False
     ssh_known_hosts_path: str | None = None
     three_xui_version: str | None = None
     three_xui_verify_tls: bool = True
@@ -141,8 +141,9 @@ class Settings(BaseSettings):
                 )
 
         if self.environment == "production":
-            if not self.ssh_verify_host_key:
-                raise ValueError("production requires SSH host-key verification")
+            # SSH host-key verification is intentionally operator-configurable. ASO manages
+            # short-lived replacement VPS instances where IPs can be recycled with a new host key.
+            # Transport TLS verification remains mandatory in production.
             if not self.three_xui_verify_tls:
                 raise ValueError("production requires 3X-UI TLS verification")
             if not self.master_3xui_verify_tls:

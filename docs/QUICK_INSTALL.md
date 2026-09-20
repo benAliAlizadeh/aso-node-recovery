@@ -139,4 +139,4 @@ If the configured Master resolves to the ASO host, the installer checks Docker-t
 
 ## SSH host identity during onboarding
 
-ASO never disables strict SSH host-key verification. During Node onboarding it displays the SSH SHA256 host-key fingerprint and requires explicit confirmation before adding that exact host/port key to the persistent ASO known_hosts file. A fingerprint which changes before confirmation is rejected.
+SSH host-key verification is configurable. For ephemeral replacement VPS instances it is disabled by default, so recycled provider IPs with a new host key do not block onboarding or recovery. Set `ASO_SSH_VERIFY_HOST_KEY=true` to enable strict fingerprint confirmation and the managed `known_hosts` trust store.

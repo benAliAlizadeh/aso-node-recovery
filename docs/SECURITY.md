@@ -1,7 +1,7 @@
 # Security controls
 
 - `DRY_RUN=true`, `ALLOW_REAL_INFRASTRUCTURE_MUTATION=false`, and `ALLOW_OLD_VPS_DELETION=false` are independent safe defaults.
-- Production configuration refuses disabled SSH host-key verification or disabled TLS verification
+- Production keeps 3X-UI TLS verification mandatory. SSH host-key verification is operator-configurable for ephemeral replacement nodes.
   for node/master 3X-UI.
 - Telegram access is an explicit user-ID allow-list.
 - Destructive Telegram confirmations are user-bound, HMAC signed, and expire.
